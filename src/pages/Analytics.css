@@ -16,7 +16,7 @@
   font-size: 32px;
   font-weight: 700;
   margin-bottom: 8px;
-  background: linear-gradient(135deg, #00d4ff 0%, #00a8cc 100%);
+  background: linear-gradient(135deg, #3b82f6 0%, #1e40af 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -30,10 +30,10 @@
 .time-range-selector {
   display: flex;
   gap: 8px;
-  background: rgba(26, 26, 46, 0.6);
+  background: rgba(10, 14, 26, 0.6);
   padding: 4px;
   border-radius: 8px;
-  border: 1px solid rgba(0, 212, 255, 0.2);
+  border: 1px solid rgba(59, 130, 246, 0.2);
 }
 
 .range-btn {
@@ -48,12 +48,12 @@
 
 .range-btn:hover {
   color: #ffffff;
-  background: rgba(0, 212, 255, 0.1);
+  background: rgba(59, 130, 246, 0.1);
 }
 
 .range-btn.active {
-  background: rgba(0, 212, 255, 0.2);
-  color: #00d4ff;
+  background: rgba(59, 130, 246, 0.2);
+  color: #3b82f6;
 }
 
 .metrics-row {
@@ -64,8 +64,8 @@
 }
 
 .metric-card {
-  background: rgba(26, 26, 46, 0.6);
-  border: 1px solid rgba(0, 212, 255, 0.2);
+  background: rgba(10, 14, 26, 0.6);
+  border: 1px solid rgba(59, 130, 246, 0.2);
   border-radius: 12px;
   padding: 20px;
   display: flex;
@@ -76,8 +76,8 @@
 
 .metric-card:hover {
   transform: translateY(-2px);
-  border-color: rgba(0, 212, 255, 0.4);
-  box-shadow: 0 8px 24px rgba(0, 212, 255, 0.1);
+  border-color: rgba(59, 130, 246, 0.4);
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.1);
 }
 
 .metric-icon {
@@ -139,8 +139,8 @@
 }
 
 .chart-card {
-  background: rgba(26, 26, 46, 0.6);
-  border: 1px solid rgba(0, 212, 255, 0.2);
+  background: rgba(10, 14, 26, 0.6);
+  border: 1px solid rgba(59, 130, 246, 0.2);
   border-radius: 12px;
   padding: 20px;
   transition: all 0.3s ease;
@@ -151,8 +151,8 @@
 }
 
 .chart-card:hover {
-  border-color: rgba(0, 212, 255, 0.4);
-  box-shadow: 0 8px 24px rgba(0, 212, 255, 0.1);
+  border-color: rgba(59, 130, 246, 0.4);
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.1);
 }
 
 .chart-header {
@@ -175,9 +175,9 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  background: rgba(0, 212, 255, 0.1);
-  color: #00d4ff;
-  border: 1px solid rgba(0, 212, 255, 0.3);
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+  border: 1px solid rgba(59, 130, 246, 0.3);
 }
 
 .chart-badge.ml {
@@ -187,8 +187,8 @@
 }
 
 .insights-panel {
-  background: rgba(26, 26, 46, 0.6);
-  border: 1px solid rgba(0, 212, 255, 0.2);
+  background: rgba(10, 14, 26, 0.6);
+  border: 1px solid rgba(59, 130, 246, 0.2);
   border-radius: 12px;
   padding: 24px;
 }
@@ -197,7 +197,7 @@
   font-size: 20px;
   font-weight: 600;
   margin-bottom: 20px;
-  color: #00d4ff;
+  color: #3b82f6;
 }
 
 .insights-grid {
@@ -216,8 +216,8 @@
 }
 
 .insight-card:hover {
-  border-color: rgba(0, 212, 255, 0.5);
-  background: rgba(0, 212, 255, 0.05);
+  border-color: rgba(59, 130, 246, 0.5);
+  background: rgba(59, 130, 246, 0.05);
 }
 
 .insight-icon {
@@ -240,7 +240,7 @@
 }
 
 .insight-icon.info {
-  background: rgba(0, 212, 255, 0.1);
+  background: rgba(59, 130, 246, 0.1);
 }
 
 .insight-content {

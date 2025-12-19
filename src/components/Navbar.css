@@ -4,9 +4,9 @@
   left: 0;
   right: 0;
   height: 70px;
-  background: rgba(26, 26, 46, 0.95);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(0, 212, 255, 0.2);
+  background: linear-gradient(135deg, rgba(10, 14, 26, 0.98), rgba(20, 27, 45, 0.98));
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(59, 130, 246, 0.25);
   z-index: 1000;
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
 }
@@ -28,9 +28,10 @@
 }
 
 .navbar-title {
-  font-size: 20px;
-  font-weight: 700;
-  background: linear-gradient(135deg, #00d4ff 0%, #00a8cc 100%);
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  background: linear-gradient(135deg, #3b82f6 0%, #1e40af 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -57,12 +58,12 @@
 
 .nav-link:hover {
   color: #ffffff;
-  background: rgba(0, 212, 255, 0.1);
+  background: rgba(59, 130, 246, 0.12);
 }
 
 .nav-link.active {
-  color: #00d4ff;
-  background: rgba(0, 212, 255, 0.15);
+  color: #3b82f6;
+  background: rgba(59, 130, 246, 0.18);
 }
 
 .nav-link.active::after {
@@ -72,47 +73,54 @@
   left: 20px;
   right: 20px;
   height: 2px;
-  background: #00d4ff;
+  background: linear-gradient(90deg, transparent, #3b82f6, transparent);
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
 }
 
 .navbar-status {
   display: flex;
   align-items: center;
+  gap: 16px;
 }
 
-.status-indicator {
+.user-info {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 8px 16px;
-  background: rgba(0, 255, 127, 0.1);
+  background: rgba(59, 130, 246, 0.1);
   border-radius: 20px;
-  border: 1px solid rgba(0, 255, 127, 0.3);
+  border: 1px solid rgba(59, 130, 246, 0.2);
 }
 
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #00ff7f;
-  animation: pulse 2s infinite;
+.user-info svg {
+  color: #3b82f6;
 }
 
-@keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-    box-shadow: 0 0 8px rgba(0, 255, 127, 0.8);
-  }
-  50% {
-    opacity: 0.6;
-    box-shadow: 0 0 4px rgba(0, 255, 127, 0.4);
-  }
+.user-info span {
+  color: #f8fafc;
+  font-weight: 600;
+  font-size: 14px;
 }
 
-.status-indicator span {
-  color: #00ff7f;
+.logout-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  color: #f87171;
   font-weight: 600;
   font-size: 13px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.logout-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
 }
 
 @media (max-width: 768px) {

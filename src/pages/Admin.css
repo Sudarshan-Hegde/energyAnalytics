@@ -16,7 +16,7 @@
   font-size: 32px;
   font-weight: 700;
   margin-bottom: 8px;
-  background: linear-gradient(135deg, #00d4ff 0%, #00a8cc 100%);
+  background: linear-gradient(135deg, #3b82f6 0%, #1e40af 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -32,19 +32,19 @@
   align-items: center;
   gap: 8px;
   padding: 12px 24px;
-  background: linear-gradient(135deg, #00d4ff 0%, #00a8cc 100%);
+  background: linear-gradient(135deg, #3b82f6 0%, #1e40af 100%);
   color: #ffffff;
   border: none;
   border-radius: 8px;
   font-weight: 600;
   font-size: 14px;
   transition: all 0.3s ease;
-  box-shadow: 0 4px 12px rgba(0, 212, 255, 0.3);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
 }
 
 .primary-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(0, 212, 255, 0.4);
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
 }
 
 .secondary-btn {
@@ -71,8 +71,8 @@
 }
 
 .stat-box {
-  background: rgba(26, 26, 46, 0.6);
-  border: 1px solid rgba(0, 212, 255, 0.2);
+  background: rgba(10, 14, 26, 0.6);
+  border: 1px solid rgba(59, 130, 246, 0.2);
   border-radius: 12px;
   padding: 20px;
   display: flex;
@@ -83,15 +83,15 @@
 
 .stat-box:hover {
   transform: translateY(-2px);
-  border-color: rgba(0, 212, 255, 0.4);
-  box-shadow: 0 8px 24px rgba(0, 212, 255, 0.1);
+  border-color: rgba(59, 130, 246, 0.4);
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.1);
 }
 
 .stat-icon-box {
   width: 50px;
   height: 50px;
   border-radius: 10px;
-  background: rgba(0, 212, 255, 0.1);
+  background: rgba(59, 130, 246, 0.1);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -135,8 +135,8 @@
 }
 
 .admin-content {
-  background: rgba(26, 26, 46, 0.6);
-  border: 1px solid rgba(0, 212, 255, 0.2);
+  background: rgba(10, 14, 26, 0.6);
+  border: 1px solid rgba(59, 130, 246, 0.2);
   border-radius: 12px;
   overflow: hidden;
 }
@@ -171,15 +171,15 @@
 }
 
 .tab:hover {
-  background: rgba(0, 212, 255, 0.05);
-  border-color: rgba(0, 212, 255, 0.3);
+  background: rgba(59, 130, 246, 0.05);
+  border-color: rgba(59, 130, 246, 0.3);
   color: #ffffff;
 }
 
 .tab.active {
-  background: rgba(0, 212, 255, 0.15);
-  border-color: #00d4ff;
-  color: #00d4ff;
+  background: rgba(59, 130, 246, 0.15);
+  border-color: #3b82f6;
+  color: #3b82f6;
 }
 
 .search-box {
@@ -243,7 +243,7 @@ tbody tr {
 }
 
 tbody tr:hover {
-  background: rgba(0, 212, 255, 0.05);
+  background: rgba(59, 130, 246, 0.05);
 }
 
 td {
@@ -261,7 +261,7 @@ td {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #00d4ff 0%, #00a8cc 100%);
+  background: linear-gradient(135deg, #3b82f6 0%, #1e40af 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -273,7 +273,7 @@ td {
   width: 36px;
   height: 36px;
   border-radius: 8px;
-  background: rgba(0, 212, 255, 0.1);
+  background: rgba(59, 130, 246, 0.1);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -294,8 +294,8 @@ td {
 }
 
 .role-badge.operator {
-  background: rgba(0, 212, 255, 0.1);
-  color: #00d4ff;
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
 }
 
 .role-badge.analyst {
@@ -362,9 +362,9 @@ td {
 }
 
 .icon-btn:hover {
-  background: rgba(0, 212, 255, 0.1);
-  border-color: #00d4ff;
-  color: #00d4ff;
+  background: rgba(59, 130, 246, 0.1);
+  border-color: #3b82f6;
+  color: #3b82f6;
 }
 
 .logs-container {
@@ -384,7 +384,7 @@ td {
 }
 
 .log-entry.info {
-  border-left-color: #00d4ff;
+  border-left-color: #3b82f6;
 }
 
 .log-entry.warning {
@@ -404,8 +404,8 @@ td {
 }
 
 .log-entry.info .log-indicator {
-  background: #00d4ff;
-  box-shadow: 0 0 8px rgba(0, 212, 255, 0.5);
+  background: #3b82f6;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
 }
 
 .log-entry.warning .log-indicator {
@@ -439,8 +439,8 @@ td {
 }
 
 .log-type.info {
-  background: rgba(0, 212, 255, 0.1);
-  color: #00d4ff;
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
 }
 
 .log-type.warning {
@@ -485,7 +485,7 @@ td {
 .settings-section h3 {
   font-size: 18px;
   font-weight: 600;
-  color: #00d4ff;
+  color: #3b82f6;
   margin-bottom: 20px;
 }
 
@@ -556,7 +556,7 @@ td {
 }
 
 .toggle input:checked + .slider {
-  background-color: #00d4ff;
+  background-color: #3b82f6;
 }
 
 .toggle input:checked + .slider:before {
@@ -575,7 +575,7 @@ td {
 
 .settings-select:focus, .settings-input:focus {
   outline: none;
-  border-color: #00d4ff;
+  border-color: #3b82f6;
 }
 
 .settings-actions {
