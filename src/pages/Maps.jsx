@@ -253,14 +253,25 @@ const Maps = () => {
       setMapCenter({ lat: center.lat, lng: center.lng });
       updateLocation(center);
       
-      // Immediately reload visible layers - no debounce for aggressive loading
-      refreshVisibleOverpassLayers();
+      // Debounce to prevent API spam
+      if (moveEndTimerRef.current) {
+        clearTimeout(moveEndTimerRef.current);
+      }
+      
+      moveEndTimerRef.current = setTimeout(() => {
+        refreshVisibleOverpassLayers();
+      }, 1000); // 1 second debounce to prevent API spam
     });
     
-    // Also reload on zoom end for immediate updates
+    // Also reload on zoom end
     map.current.on('zoomend', () => {
-      // Immediate reload on zoom
-      refreshVisibleOverpassLayers();
+      if (moveEndTimerRef.current) {
+        clearTimeout(moveEndTimerRef.current);
+      }
+      
+      moveEndTimerRef.current = setTimeout(() => {
+        refreshVisibleOverpassLayers();
+      }, 800); // Slightly faster on zoom
     });
 
     return () => {
@@ -706,10 +717,17 @@ const Maps = () => {
     } catch (error) {
       console.error(`❌ Error fetching Overpass data for ${layerType}:`, error);
       console.error(`   Error details: ${error.message}`);
-      console.log(`🔁 Will retry on next map movement...`);
       
-      // Don't uncheck or show alert - just silently fail and retry later
-      // This allows aggressive loading without annoying the user
+      // Handle rate limiting (429) with backoff
+      if (error.message.includes('429')) {
+        console.log(`⏰ Rate limited! Waiting 5 seconds before allowing retry...`);
+        // Add delay before allowing next request
+        setTimeout(() => {
+          loadedBoundsRef.current[layerType] = null; // Clear cache to allow retry
+        }, 5000); // 5 second delay for rate limited requests
+      } else {
+        console.log(`🔁 Will retry on next map movement...`);
+      }
     } finally {
       loadingLayersRef.current[layerType] = false;
       setLoadingOverpass(prev => ({ ...prev, [layerType]: false }));
@@ -738,7 +756,7 @@ const Maps = () => {
     });
   };
 
-  const refreshVisibleOverpassLayers = () => {
+  const refreshVisibleOverpassLayers = async () => {
     if (!map.current) return;
     
     // Get current zoom level
@@ -758,19 +776,22 @@ const Maps = () => {
     const currentBbox = `${Math.round(bounds.getSouth()*5)}_${Math.round(bounds.getWest()*5)}_${Math.round(bounds.getNorth()*5)}_${Math.round(bounds.getEast()*5)}`;
     console.log(`🔄 Checking ${overpassLayerKeys.length} layers at zoom ${zoom.toFixed(1)} for bbox: ${currentBbox}`);
     
-    // Aggressively load all visible layers
-    overpassLayerKeys.forEach(layerKey => {
+    // Load layers SEQUENTIALLY with delay to prevent API spam
+    for (const layerKey of overpassLayerKeys) {
       const lastBbox = loadedBoundsRef.current[layerKey];
       
-      // Always reload if bbox changed or first load
+      // Only reload if bbox changed or first load
       if (!lastBbox || lastBbox !== currentBbox) {
         console.log(`⚡ ${layerKey}: New region detected (was: ${lastBbox || 'none'}, now: ${currentBbox})`);
-        fetchOverpassData(layerKey, true); // Always force reload on region change
         loadedBoundsRef.current[layerKey] = currentBbox;
+        fetchOverpassData(layerKey, true); // Force reload on region change
+        
+        // Wait 600ms between requests to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 600));
       } else {
         console.log(`✓ ${layerKey}: Same region, using existing data`);
       }
-    });
+    }
   };
 
   const toggleSection = (sectionName) => {
