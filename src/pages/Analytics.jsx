@@ -1,12 +1,86 @@
 import { useState, useEffect } from 'react';
 import ReactECharts from 'echarts-for-react';
 import './Analytics.css';
+import useEconomicData from '../hooks/useEconomicData';
 
 const Analytics = () => {
   const [timeRange, setTimeRange] = useState('24h');
   const [selectedMetric, setSelectedMetric] = useState('power');
 
-  // Real-time power consumption chart
+  // Fetch real economic data
+  const {
+    historicalLMP,
+    zoneEfficiency,
+    avgForecast,
+    statistics,
+    loading: dataLoading,
+    error: dataError
+  } = useEconomicData();
+
+  // Historical LMP chart (replaces power consumption)
+  const getLMPHistoryOption = () => {
+    if (historicalLMP.length === 0) {
+      return null;
+    }
+
+    const years = historicalLMP.map(d => d.year);
+    const values = historicalLMP.map(d => d.value);
+
+    return {
+      backgroundColor: 'transparent',
+      tooltip: {
+        trigger: 'axis',
+        backgroundColor: 'rgba(26, 26, 46, 0.95)',
+        borderColor: '#00d4ff',
+        borderWidth: 1,
+        textStyle: { color: '#fff' },
+        formatter: (params) => {
+          const param = params[0];
+          return `${param.name}<br/>Avg LMP: $${param.value.toFixed(2)}/MWh`;
+        }
+      },
+      grid: {
+        left: '3%',
+        right: '4%',
+        bottom: '3%',
+        containLabel: true
+      },
+      xAxis: {
+        type: 'category',
+        data: years,
+        axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.2)' } },
+        axisLabel: { color: 'rgba(255, 255, 255, 0.6)' }
+      },
+      yAxis: {
+        type: 'value',
+        name: '$/MWh',
+        nameTextStyle: { color: 'rgba(255, 255, 255, 0.6)' },
+        axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.2)' } },
+        axisLabel: { color: 'rgba(255, 255, 255, 0.6)' },
+        splitLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.1)' } }
+      },
+      series: [{
+        name: 'LMP',
+        type: 'line',
+        smooth: true,
+        data: values,
+        areaStyle: {
+          color: {
+            type: 'linear',
+            x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [
+              { offset: 0, color: 'rgba(0, 212, 255, 0.4)' },
+              { offset: 1, color: 'rgba(0, 212, 255, 0.05)' }
+            ]
+          }
+        },
+        lineStyle: { color: '#00d4ff', width: 2 },
+        itemStyle: { color: '#00d4ff' }
+      }]
+    };
+  };
+
+  // Real-time power consumption chart (kept for non-economic data)
   const getPowerConsumptionOption = () => {
     const hours = Array.from({ length: 24 }, (_, i) => `${i}:00`);
     const data = hours.map(() => Math.random() * 500 + 800);
@@ -61,8 +135,19 @@ const Analytics = () => {
     };
   };
 
-  // Grid efficiency by zone
+  // Grid efficiency by zone - using real data
   const getEfficiencyOption = () => {
+    if (zoneEfficiency.length === 0) {
+      return null;
+    }
+
+    const colors = ['#00d4ff', '#4caf50', '#ffc107', '#9c27b0', '#ff5722', '#3b82f6', '#10b981'];
+    const data = zoneEfficiency.slice(0, 7).map((zone, index) => ({
+      value: zone.efficiency,
+      name: zone.zone,
+      itemStyle: { color: colors[index % colors.length] }
+    }));
+
     return {
       backgroundColor: 'transparent',
       tooltip: {
@@ -70,7 +155,10 @@ const Analytics = () => {
         backgroundColor: 'rgba(26, 26, 46, 0.95)',
         borderColor: '#00d4ff',
         borderWidth: 1,
-        textStyle: { color: '#fff' }
+        textStyle: { color: '#fff' },
+        formatter: (params) => {
+          return `${params.name}<br/>Efficiency: ${params.value.toFixed(1)}%`;
+        }
       },
       legend: {
         bottom: '5%',
@@ -96,17 +184,12 @@ const Analytics = () => {
             show: true,
             fontSize: 20,
             fontWeight: 'bold',
-            color: '#fff'
+            color: '#fff',
+            formatter: '{b}\n{d}%'
           }
         },
         labelLine: { show: false },
-        data: [
-          { value: 94.5, name: 'Zone A', itemStyle: { color: '#00d4ff' } },
-          { value: 91.2, name: 'Zone B', itemStyle: { color: '#4caf50' } },
-          { value: 88.7, name: 'Zone C', itemStyle: { color: '#ffc107' } },
-          { value: 92.3, name: 'Zone D', itemStyle: { color: '#9c27b0' } },
-          { value: 89.8, name: 'Zone E', itemStyle: { color: '#ff5722' } }
-        ]
+        data: data
       }]
     };
   };
@@ -164,11 +247,20 @@ const Analytics = () => {
     };
   };
 
-  // Forecast chart
+  // Forecast chart - using real forecast data
   const getForecastOption = () => {
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    const actual = [820, 932, 901, 934, 1290, 1330, 1320];
-    const forecast = [820, 932, 901, 934, 1290, 1400, 1450];
+    if (historicalLMP.length === 0 || !avgForecast.base) {
+      return null;
+    }
+
+    const years = historicalLMP.map(d => d.year);
+    const actualData = historicalLMP.map(d => d.value);
+    
+    // Extend with forecast for next year
+    const forecastYears = [...years, '2026'];
+    const forecastData = [...actualData, avgForecast.base];
+    const highData = [...actualData, avgForecast.high];
+    const lowData = [...actualData, avgForecast.low];
 
     return {
       backgroundColor: 'transparent',
@@ -177,10 +269,17 @@ const Analytics = () => {
         backgroundColor: 'rgba(26, 26, 46, 0.95)',
         borderColor: '#00d4ff',
         borderWidth: 1,
-        textStyle: { color: '#fff' }
+        textStyle: { color: '#fff' },
+        formatter: (params) => {
+          let result = `${params[0].name}<br/>`;
+          params.forEach(param => {
+            result += `${param.marker}${param.seriesName}: $${param.value.toFixed(2)}/MWh<br/>`;
+          });
+          return result;
+        }
       },
       legend: {
-        data: ['Actual', 'AI Forecast'],
+        data: ['Actual', 'Base Forecast', 'High Case', 'Low Case'],
         top: '5%',
         textStyle: { color: 'rgba(255, 255, 255, 0.8)' }
       },
@@ -192,13 +291,13 @@ const Analytics = () => {
       },
       xAxis: {
         type: 'category',
-        data: days,
+        data: forecastYears,
         axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.2)' } },
         axisLabel: { color: 'rgba(255, 255, 255, 0.6)' }
       },
       yAxis: {
         type: 'value',
-        name: 'MW',
+        name: '$/MWh',
         nameTextStyle: { color: 'rgba(255, 255, 255, 0.6)' },
         axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.2)' } },
         axisLabel: { color: 'rgba(255, 255, 255, 0.6)' },
@@ -208,15 +307,15 @@ const Analytics = () => {
         {
           name: 'Actual',
           type: 'line',
-          data: actual,
+          data: actualData,
           smooth: true,
           lineStyle: { color: '#00d4ff', width: 2 },
           itemStyle: { color: '#00d4ff' }
         },
         {
-          name: 'AI Forecast',
+          name: 'Base Forecast',
           type: 'line',
-          data: forecast,
+          data: forecastData,
           smooth: true,
           lineStyle: { 
             color: '#9c27b0', 
@@ -224,17 +323,69 @@ const Analytics = () => {
             type: 'dashed'
           },
           itemStyle: { color: '#9c27b0' }
+        },
+        {
+          name: 'High Case',
+          type: 'line',
+          data: highData,
+          smooth: true,
+          lineStyle: { 
+            color: '#ef4444', 
+            width: 1.5,
+            type: 'dotted'
+          },
+          itemStyle: { color: '#ef4444' }
+        },
+        {
+          name: 'Low Case',
+          type: 'line',
+          data: lowData,
+          smooth: true,
+          lineStyle: { 
+            color: '#10b981', 
+            width: 1.5,
+            type: 'dotted'
+          },
+          itemStyle: { color: '#10b981' }
         }
       ]
     };
   };
 
+  // Show loading state
+  if (dataLoading) {
+    return (
+      <div className="analytics-page-loading">
+        <div className="loading-spinner"></div>
+        <p>Loading economic data...</p>
+      </div>
+    );
+  }
+
+  // Show info message if no data (backend not connected)
+  if (!dataLoading && historicalLMP.length === 0 && !dataError) {
+    console.log('No economic data available - backend API not connected');
+  }
+
   return (
     <div className="analytics-page">
+      
+      {/* Backend Not Connected Banner */}
+      {!dataLoading && historicalLMP.length === 0 && (
+        <div className="backend-warning-banner">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/>
+            <line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          <span>Backend API not connected. Analytics will show without real data. See INTEGRATION_GUIDE.md for setup instructions.</span>
+        </div>
+      )}
+
       <div className="page-header">
         <div>
           <h1>Analytics Dashboard</h1>
-          <p>AI-powered insights and real-time grid analytics</p>
+          <p>Real economic insights from ISO-NE market data</p>
         </div>
         <div className="time-range-selector">
           {['1h', '24h', '7d', '30d'].map(range => (
@@ -253,13 +404,15 @@ const Analytics = () => {
         <div className="metric-card">
           <div className="metric-icon" style={{ background: 'rgba(0, 212, 255, 0.1)' }}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00d4ff" strokeWidth="2">
-              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+              <path d="M12 2v20M17 7H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
             </svg>
           </div>
           <div className="metric-info">
-            <div className="metric-value">1,247 MW</div>
-            <div className="metric-label">Total Load</div>
-            <div className="metric-change positive">+5.2%</div>
+            <div className="metric-value">${statistics.avgLMP}/MWh</div>
+            <div className="metric-label">Avg LMP (2025)</div>
+            <div className={`metric-change ${statistics.lmpChange >= 0 ? 'positive' : 'negative'}`}>
+              {statistics.lmpChange >= 0 ? '+' : ''}{statistics.lmpChange}%
+            </div>
           </div>
         </div>
 
@@ -271,115 +424,58 @@ const Analytics = () => {
             </svg>
           </div>
           <div className="metric-info">
-            <div className="metric-value">94.5%</div>
+            <div className="metric-value">{statistics.avgEfficiency}%</div>
             <div className="metric-label">Avg Efficiency</div>
-            <div className="metric-change positive">+2.1%</div>
+            <div className="metric-change positive">System-wide</div>
           </div>
         </div>
 
         <div className="metric-card">
-          <div className="metric-icon" style={{ background: 'rgba(255, 193, 7, 0.1)' }}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ffc107" strokeWidth="2">
-              <path d="M18 8h1a4 4 0 0 1 0 8h-1M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/>
-              <line x1="6" y1="1" x2="6" y2="4"/>
-              <line x1="10" y1="1" x2="10" y2="4"/>
-              <line x1="14" y1="1" x2="14" y2="4"/>
+          <div className="metric-icon" style={{ background: 'rgba(156, 39, 176, 0.1)' }}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#9c27b0" strokeWidth="2">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
             </svg>
           </div>
           <div className="metric-info">
-            <div className="metric-value">237 MWh</div>
-            <div className="metric-label">Storage</div>
-            <div className="metric-change neutral">0%</div>
+            <div className="metric-value">${statistics.forecastBase.toFixed(2)}</div>
+            <div className="metric-label">5Y Forecast</div>
+            <div className="metric-change neutral">Base Case</div>
           </div>
         </div>
 
         <div className="metric-card">
-          <div className="metric-icon" style={{ background: 'rgba(244, 67, 54, 0.1)' }}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f44336" strokeWidth="2">
-              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-              <line x1="12" y1="9" x2="12" y2="13"/>
-              <line x1="12" y1="17" x2="12.01" y2="17"/>
+          <div className="metric-icon" style={{ background: 'rgba(59, 130, 246, 0.1)' }}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
             </svg>
           </div>
           <div className="metric-info">
-            <div className="metric-value">3</div>
-            <div className="metric-label">Active Alerts</div>
-            <div className="metric-change negative">+1</div>
+            <div className="metric-value">{statistics.totalZones}</div>
+            <div className="metric-label">Active Zones</div>
+            <div className="metric-change neutral">{statistics.dataPoints} records</div>
           </div>
         </div>
       </div>
 
       <div className="charts-grid">
-        <div className="chart-card large">
-          <div className="chart-header">
-            <h3>Power Consumption - 24 Hour Trend</h3>
-            <span className="chart-badge">Real-time</span>
-          </div>
-          <ReactECharts 
-            option={getPowerConsumptionOption()} 
-            style={{ height: '300px' }}
-          />
+        <div className="chart-card">
+          <h3>Historical Average LMP (2022-2025)</h3>
+          {getLMPHistoryOption() && <ReactECharts option={getLMPHistoryOption()} style={{ height: '300px' }} />}
         </div>
 
         <div className="chart-card">
-          <div className="chart-header">
-            <h3>Grid Efficiency by Zone</h3>
-          </div>
-          <ReactECharts 
-            option={getEfficiencyOption()} 
-            style={{ height: '300px' }}
-          />
+          <h3>Zone Efficiency Distribution</h3>
+          {getEfficiencyOption() && <ReactECharts option={getEfficiencyOption()} style={{ height: '300px' }} />}
         </div>
 
         <div className="chart-card">
-          <div className="chart-header">
-            <h3>Substation Load Distribution</h3>
-          </div>
-          <ReactECharts 
-            option={getLoadDistributionOption()} 
-            style={{ height: '300px' }}
-          />
+          <h3>Load Distribution by Substation</h3>
+          <ReactECharts option={getLoadDistributionOption()} style={{ height: '300px' }} />
         </div>
 
-        <div className="chart-card large">
-          <div className="chart-header">
-            <h3>AI-Powered Load Forecast</h3>
-            <span className="chart-badge ml">ML Model: LSTM</span>
-          </div>
-          <ReactECharts 
-            option={getForecastOption()} 
-            style={{ height: '300px' }}
-          />
-        </div>
-      </div>
-
-      <div className="insights-panel">
-        <h3>AI Insights & Recommendations</h3>
-        <div className="insights-grid">
-          <div className="insight-card">
-            <div className="insight-icon warning">⚠️</div>
-            <div className="insight-content">
-              <h4>High Load Alert - Substation D</h4>
-              <p>Current load at 98%. Consider load balancing to prevent overload.</p>
-              <span className="insight-time">2 mins ago</span>
-            </div>
-          </div>
-          <div className="insight-card">
-            <div className="insight-icon success">✓</div>
-            <div className="insight-content">
-              <h4>Efficiency Optimization</h4>
-              <p>Zone A efficiency improved by 3.2% after recent optimizations.</p>
-              <span className="insight-time">15 mins ago</span>
-            </div>
-          </div>
-          <div className="insight-card">
-            <div className="insight-icon info">ℹ️</div>
-            <div className="insight-content">
-              <h4>Forecast Update</h4>
-              <p>Peak demand expected tomorrow at 6 PM - prepare reserves.</p>
-              <span className="insight-time">1 hour ago</span>
-            </div>
-          </div>
+        <div className="chart-card">
+          <h3>LMP Forecast (5-Year Outlook)</h3>
+          {getForecastOption() && <ReactECharts option={getForecastOption()} style={{ height: '300px' }} />}
         </div>
       </div>
     </div>

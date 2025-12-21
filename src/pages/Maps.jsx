@@ -2,22 +2,78 @@ import { useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './Maps.css';
+import useGridInfrastructure from '../hooks/useGridInfrastructure';
 
 const Maps = () => {
   const mapContainer = useRef(null);
   const map = useRef(null);
   const [mapLoaded, setMapLoaded] = useState(false);
+  
+  // Fetch real grid infrastructure data
+  const { 
+    buses, 
+    branches, 
+    generators, 
+    busesGeoJSON, 
+    branchesGeoJSON, 
+    generatorsGeoJSON,
+    loading: dataLoading, 
+    error: dataError 
+  } = useGridInfrastructure();
+  
+  // Update grid stats from real data
   const [gridStats, setGridStats] = useState({
-    totalNodes: 1247,
+    totalNodes: 0,
     activeAlerts: 3,
-    powerFlow: '1.2 GW',
-    efficiency: 94.5
+    powerFlow: '0 GW',
+    efficiency: 0
   });
+  
+  // Update stats when data loads
+  useEffect(() => {
+    if (buses.length > 0 && branches.length > 0) {
+      const closedBranches = branches.filter(b => b.status === 'Closed');
+      const avgEfficiency = closedBranches.length > 0 
+        ? (closedBranches.length / branches.length * 100).toFixed(1)
+        : 0;
+      
+      const totalCapacity = generators.reduce((sum, gen) => sum + (parseFloat(gen.max_capacity_mw) || 0), 0);
+      
+      setGridStats({
+        totalNodes: buses.length,
+        activeAlerts: branches.filter(b => b.status === 'Open').length,
+        powerFlow: `${(totalCapacity / 1000).toFixed(2)} GW`,
+        efficiency: parseFloat(avgEfficiency)
+      });
+    }
+  }, [buses, branches, generators]);
+
+  // Log once when backend is not connected
+  useEffect(() => {
+    if (!dataLoading && buses.length === 0 && !dataError) {
+      console.log('No grid data available - backend API not connected');
+    }
+  }, [dataLoading, buses.length, dataError]);
 
   const [currentLayer, setCurrentLayer] = useState('satellite');
   const [currentLocation, setCurrentLocation] = useState('Loading location...');
   const [mapCenter, setMapCenter] = useState({ lat: 37.75, lng: -122.4 });
   const [isLayerDropdownOpen, setIsLayerDropdownOpen] = useState(false);
+  
+  // Dynamic filters state based on actual data
+  const [filters, setFilters] = useState({
+    voltageRanges: [],
+    capacityRanges: [],
+    statuses: [],
+    regions: []
+  });
+  const [activeFilters, setActiveFilters] = useState({
+    voltages: [],
+    capacities: [],
+    statuses: [],
+    regions: []
+  });
+  
   const [visibleLayers, setVisibleLayers] = useState({
     grids: true,
     substations: true,
@@ -49,6 +105,14 @@ const Maps = () => {
     filters: false,
     overpass: false
   });
+  
+  // Database management state
+  const [databases, setDatabases] = useState([
+    { id: 1, name: 'gridsense_iso_ne_sample.db', active: true, path: './gridsense_iso_ne_sample.db' }
+  ]);
+  const [showAddDatabase, setShowAddDatabase] = useState(false);
+  const [newDbName, setNewDbName] = useState('');
+  const [newDbPath, setNewDbPath] = useState('');
   const [loadingOverpass, setLoadingOverpass] = useState({});
   const [activeLayers, setActiveLayers] = useState([]);
   const [overpassCache, setOverpassCache] = useState({});
@@ -127,6 +191,7 @@ const Maps = () => {
       projection: {
         type: 'globe'
       },
+      glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
       sources: {
         [selectedStyle.layer.source]: selectedStyle.source,
         'countries': {
@@ -219,68 +284,445 @@ const Maps = () => {
   useEffect(() => {
     if (map.current) return; // Initialize map only once
 
-    map.current = new maplibregl.Map({
-      container: mapContainer.current,
-      style: createMapStyle('satellite'), // Start with satellite + boundaries
-      center: [0, 0],
-      zoom: 1.5,
-      bearing: 0
-    });
+    // Define initialization function that checks container and dimensions
+    const initializeMap = () => {
+      if (!mapContainer.current) {
+        console.log('Map container not ready, retrying...');
+        setTimeout(initializeMap, 100);
+        return;
+      }
+      
+      const width = mapContainer.current.offsetWidth;
+      const height = mapContainer.current.offsetHeight;
+      
+      if (width === 0 || height === 0) {
+        console.warn('Map container has no dimensions, waiting...');
+        // Retry after a short delay
+        setTimeout(initializeMap, 100);
+        return;
+      }
 
-    // Add navigation controls
-    map.current.addControl(new maplibregl.NavigationControl(), 'top-right');
-    map.current.addControl(new maplibregl.FullscreenControl(), 'top-right');
-    
-    // Add atmosphere effect for globe
-    map.current.on('style.load', () => {
-      map.current.setFog({
-        color: 'rgb(186, 210, 235)', // Lower atmosphere
-        'high-color': 'rgb(36, 92, 223)', // Upper atmosphere
-        'horizon-blend': 0.02, // Atmosphere thickness
-        'space-color': 'rgb(11, 11, 25)', // Background space color
-        'star-intensity': 0.6 // Stars intensity
+      try {
+        map.current = new maplibregl.Map({
+          container: mapContainer.current,
+          style: createMapStyle('satellite'), // OSM satellite with boundaries
+          center: [0, 20], // Centered for good globe view
+          zoom: 1.5,
+          renderWorldCopies: false, // Disable world wrapping for globe
+          attributionControl: false,
+          antialias: true,
+          maxPitch: 85
+        });
+
+      // Add navigation controls
+      map.current.addControl(new maplibregl.NavigationControl(), 'top-right');
+      map.current.addControl(new maplibregl.FullscreenControl(), 'top-right');
+      
+      // Add atmosphere effect for globe
+      map.current.on('style.load', () => {
+        if (!map.current) return;
+        try {
+          // MapLibre GL JS v4+ globe is set via style projection, not setProjection
+          // The projection is already set in the style object
+          console.log('3D Globe with OSM overlays enabled');
+        } catch (e) {
+          console.warn('Globe effects not supported:', e);
+        }
       });
-    });
 
-    map.current.on('load', () => {
-      setMapLoaded(true);
-      updateLocation(map.current.getCenter());
-    });
+      map.current.on('load', () => {
+        console.log('Map loaded successfully');
+        setMapLoaded(true);
+        updateLocation(map.current.getCenter());
+      });
 
-    // Update location when map moves or zooms
-    map.current.on('moveend', () => {
-      const center = map.current.getCenter();
-      setMapCenter({ lat: center.lat, lng: center.lng });
-      updateLocation(center);
+      map.current.on('error', (e) => {
+        console.error('Map error:', e);
+      });
+
+      // Update location when map moves or zooms
+      map.current.on('moveend', () => {
+        const center = map.current.getCenter();
+        setMapCenter({ lat: center.lat, lng: center.lng });
+        updateLocation(center);
+        
+        // Debounce to prevent API spam
+        if (moveEndTimerRef.current) {
+          clearTimeout(moveEndTimerRef.current);
+        }
+        
+        moveEndTimerRef.current = setTimeout(() => {
+          refreshVisibleOverpassLayers();
+        }, 1000); // 1 second debounce to prevent API spam
+      });
       
-      // Debounce to prevent API spam
-      if (moveEndTimerRef.current) {
-        clearTimeout(moveEndTimerRef.current);
-      }
-      
-      moveEndTimerRef.current = setTimeout(() => {
-        refreshVisibleOverpassLayers();
-      }, 1000); // 1 second debounce to prevent API spam
-    });
+      // Also reload on zoom end
+      map.current.on('zoomend', () => {
+        if (moveEndTimerRef.current) {
+          clearTimeout(moveEndTimerRef.current);
+        }
+      });
+    } catch (error) {
+      console.error('Error initializing map:', error);
+    }
+    };
     
-    // Also reload on zoom end
-    map.current.on('zoomend', () => {
-      if (moveEndTimerRef.current) {
-        clearTimeout(moveEndTimerRef.current);
-      }
-      
-      moveEndTimerRef.current = setTimeout(() => {
-        refreshVisibleOverpassLayers();
-      }, 800); // Slightly faster on zoom
-    });
+    // Start initialization after a small delay to ensure DOM is ready
+    const initTimer = setTimeout(initializeMap, 50);
 
     return () => {
+      clearTimeout(initTimer);
+      if (moveEndTimerRef.current) {
+        clearTimeout(moveEndTimerRef.current);
+      }
       if (map.current) {
         map.current.remove();
         map.current = null;
       }
     };
   }, []);
+
+  // Extract dynamic filter options from actual data
+  useEffect(() => {
+    if (buses.length > 0 || branches.length > 0 || generators.length > 0) {
+      // Get unique voltage levels from buses
+      const voltages = [...new Set(buses.map(b => b.nominal_voltage).filter(v => v))].sort((a, b) => b - a);
+      const voltageRanges = voltages.map(v => ({
+        label: `${v} kV`,
+        value: v,
+        count: buses.filter(b => b.nominal_voltage === v).length
+      }));
+      
+      // Get capacity ranges from generators
+      const capacities = generators.map(g => g.max_capacity).filter(c => c);
+      const maxCapacity = Math.max(...capacities, 0);
+      const capacityRanges = maxCapacity > 0 ? [
+        { label: '0-100 MW', min: 0, max: 100, count: generators.filter(g => g.max_capacity >= 0 && g.max_capacity <= 100).length },
+        { label: '100-500 MW', min: 100, max: 500, count: generators.filter(g => g.max_capacity > 100 && g.max_capacity <= 500).length },
+        { label: '500+ MW', min: 500, max: Infinity, count: generators.filter(g => g.max_capacity > 500).length }
+      ].filter(r => r.count > 0) : [];
+      
+      // Get unique statuses from branches
+      const statuses = [...new Set(branches.map(b => b.status).filter(s => s))];
+      const statusOptions = statuses.map(s => ({
+        label: s,
+        value: s,
+        count: branches.filter(b => b.status === s).length
+      }));
+      
+      // Get unique regions from buses
+      const regions = [...new Set(buses.map(b => b.state).filter(s => s))].sort();
+      const regionOptions = regions.map(r => ({
+        label: r,
+        value: r,
+        count: buses.filter(b => b.state === r).length
+      }));
+      
+      setFilters({
+        voltageRanges,
+        capacityRanges,
+        statuses: statusOptions,
+        regions: regionOptions
+      });
+    }
+  }, [buses, branches, generators]);
+
+  // Add real grid infrastructure data layers when data loads and map is ready
+  useEffect(() => {
+    if (!map.current || !mapLoaded || dataLoading || busesGeoJSON.features.length === 0) return;
+
+    console.log(`Loading ${busesGeoJSON.features.length} buses, ${branchesGeoJSON.features.length} branches`);
+
+    // Add buses source and layers
+    if (!map.current.getSource('real-buses-source')) {
+      map.current.addSource('real-buses-source', {
+        type: 'geojson',
+        data: busesGeoJSON,
+        cluster: true,
+        clusterMaxZoom: 10,
+        clusterRadius: 50
+      });
+
+      // Clustered circles layer
+      map.current.addLayer({
+        id: 'real-buses-clusters',
+        type: 'circle',
+        source: 'real-buses-source',
+        filter: ['has', 'point_count'],
+        paint: {
+          'circle-color': [
+            'step',
+            ['get', 'point_count'],
+            '#51bbd6',
+            10,
+            '#f1f075',
+            30,
+            '#f28cb1'
+          ],
+          'circle-radius': [
+            'step',
+            ['get', 'point_count'],
+            15,
+            10,
+            20,
+            30,
+            25
+          ],
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#fff',
+          'circle-opacity': 0.8
+        }
+      });
+
+      // Cluster count labels
+      map.current.addLayer({
+        id: 'real-buses-cluster-count',
+        type: 'symbol',
+        source: 'real-buses-source',
+        filter: ['has', 'point_count'],
+        layout: {
+          'text-field': '{point_count_abbreviated}',
+          'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+          'text-size': 12
+        },
+        paint: {
+          'text-color': '#ffffff'
+        }
+      });
+
+      // Individual bus points - color coded by voltage
+      map.current.addLayer({
+        id: 'real-buses-points',
+        type: 'circle',
+        source: 'real-buses-source',
+        filter: ['!', ['has', 'point_count']],
+        paint: {
+          'circle-color': [
+            'match',
+            ['get', 'voltage'],
+            345, '#9333ea', // Purple for 345kV
+            230, '#3b82f6', // Blue for 230kV
+            115, '#10b981', // Green for 115kV
+            69, '#f59e0b',  // Amber for 69kV
+            '#6b7280'       // Gray for others
+          ],
+          'circle-radius': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            8, 4,
+            12, 8,
+            16, 12
+          ],
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#ffffff',
+          'circle-opacity': 0.9
+        }
+      });
+
+      // Bus labels at higher zoom
+      map.current.addLayer({
+        id: 'real-buses-labels',
+        type: 'symbol',
+        source: 'real-buses-source',
+        filter: ['!', ['has', 'point_count']],
+        minzoom: 11,
+        layout: {
+          'text-field': ['get', 'name'],
+          'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
+          'text-size': 10,
+          'text-offset': [0, 1.5],
+          'text-anchor': 'top'
+        },
+        paint: {
+          'text-color': '#ffffff',
+          'text-halo-color': '#000000',
+          'text-halo-width': 2
+        }
+      });
+
+      // Add click handler for bus selection
+      map.current.on('click', 'real-buses-points', (e) => {
+        if (e.features.length > 0) {
+          const feature = e.features[0];
+          const props = feature.properties;
+          
+          setSelectedSubstation({
+            id: props.id,
+            name: props.name,
+            voltage: props.voltage,
+            county: props.county,
+            state: props.state,
+            shortCircuit: props.shortCircuit,
+            lmp2022: props.lmp2022,
+            lmp2023: props.lmp2023,
+            lmp2024: props.lmp2024,
+            lmp2025: props.lmp2025,
+            coordinates: e.lngLat
+          });
+          
+          // Open detail panel
+          setDetailPanelOpen(true);
+        }
+      });
+
+      // Change cursor on hover
+      map.current.on('mouseenter', 'real-buses-points', () => {
+        map.current.getCanvas().style.cursor = 'pointer';
+      });
+      
+      map.current.on('mouseleave', 'real-buses-points', () => {
+        map.current.getCanvas().style.cursor = '';
+      });
+
+      // Handle cluster clicks
+      map.current.on('click', 'real-buses-clusters', (e) => {
+        const features = map.current.queryRenderedFeatures(e.point, {
+          layers: ['real-buses-clusters']
+        });
+        const clusterId = features[0].properties.cluster_id;
+        map.current.getSource('real-buses-source').getClusterExpansionZoom(
+          clusterId,
+          (err, zoom) => {
+            if (err) return;
+            map.current.easeTo({
+              center: features[0].geometry.coordinates,
+              zoom: zoom
+            });
+          }
+        );
+      });
+    }
+
+    // Add branches (transmission lines) source and layer
+    if (!map.current.getSource('real-branches-source')) {
+      map.current.addSource('real-branches-source', {
+        type: 'geojson',
+        data: branchesGeoJSON
+      });
+
+      map.current.addLayer({
+        id: 'real-branches-lines',
+        type: 'line',
+        source: 'real-branches-source',
+        paint: {
+          'line-color': [
+            'match',
+            ['get', 'status'],
+            'Closed', '#10b981',  // Green for closed/active
+            'Open', '#ef4444',    // Red for open/inactive
+            '#6b7280'             // Gray for unknown
+          ],
+          'line-width': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            8, 1.5,
+            12, 2.5,
+            16, 3.5
+          ],
+          'line-opacity': 0.7,
+          'line-dasharray': [
+            'match',
+            ['get', 'status'],
+            'Open', ['literal', [4, 2]], // Dashed for open lines
+            ['literal', [1, 0]]            // Solid for closed
+          ]
+        },
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round'
+        }
+      });
+
+      // Add hover effect for branches
+      map.current.on('mouseenter', 'real-branches-lines', () => {
+        map.current.getCanvas().style.cursor = 'pointer';
+      });
+      
+      map.current.on('mouseleave', 'real-branches-lines', () => {
+        map.current.getCanvas().style.cursor = '';
+      });
+
+      // Add popup on branch click
+      map.current.on('click', 'real-branches-lines', (e) => {
+        if (e.features.length > 0) {
+          const props = e.features[0].properties;
+          new maplibregl.Popup()
+            .setLngLat(e.lngLat)
+            .setHTML(`
+              <div style="color: #000; font-family: Inter, sans-serif;">
+                <h3 style="margin: 0 0 8px 0; font-size: 14px; font-weight: 600;">Transmission Line</h3>
+                <p style="margin: 4px 0;"><strong>From Bus:</strong> ${props.from_bus}</p>
+                <p style="margin: 4px 0;"><strong>To Bus:</strong> ${props.to_bus}</p>
+                <p style="margin: 4px 0;"><strong>Status:</strong> <span style="color: ${props.status === 'Closed' ? '#10b981' : '#ef4444'}">${props.status}</span></p>
+                <p style="margin: 4px 0;"><strong>Length:</strong> ${props.length ? props.length.toFixed(2) + ' mi' : 'N/A'}</p>
+              </div>
+            `)
+            .addTo(map.current);
+        }
+      });
+    }
+
+    // Add generators source and layer if data available
+    if (generatorsGeoJSON.features.length > 0 && !map.current.getSource('real-generators-source')) {
+      map.current.addSource('real-generators-source', {
+        type: 'geojson',
+        data: generatorsGeoJSON
+      });
+
+      map.current.addLayer({
+        id: 'real-generators-points',
+        type: 'circle',
+        source: 'real-generators-source',
+        paint: {
+          'circle-color': '#fbbf24',
+          'circle-radius': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            8, 5,
+            12, 9,
+            16, 13
+          ],
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#ffffff',
+          'circle-opacity': 0.85
+        },
+        layout: {
+          'visibility': visibleLayers.powerPlants ? 'visible' : 'none'
+        }
+      });
+
+      // Generator hover and click
+      map.current.on('mouseenter', 'real-generators-points', () => {
+        map.current.getCanvas().style.cursor = 'pointer';
+      });
+      
+      map.current.on('mouseleave', 'real-generators-points', () => {
+        map.current.getCanvas().style.cursor = '';
+      });
+
+      map.current.on('click', 'real-generators-points', (e) => {
+        if (e.features.length > 0) {
+          const props = e.features[0].properties;
+          new maplibregl.Popup()
+            .setLngLat(e.lngLat)
+            .setHTML(`
+              <div style="color: #000; font-family: Inter, sans-serif;">
+                <h3 style="margin: 0 0 8px 0; font-size: 14px; font-weight: 600;">Generator</h3>
+                <p style="margin: 4px 0;"><strong>Name:</strong> ${props.name}</p>
+                <p style="margin: 4px 0;"><strong>Capacity:</strong> ${props.capacity} MW</p>
+                <p style="margin: 4px 0;"><strong>Status:</strong> ${props.status}</p>
+              </div>
+            `)
+            .addTo(map.current);
+        }
+      });
+    }
+
+    console.log('✅ Real grid infrastructure layers loaded successfully');
+  }, [mapLoaded, dataLoading, busesGeoJSON, branchesGeoJSON, generatorsGeoJSON, visibleLayers.powerPlants]);
 
   const changeMapStyle = (styleType) => {
     if (!map.current) return;
@@ -801,8 +1243,34 @@ const Maps = () => {
     }));
   };
 
+  // Show loading state while data is being fetched
+  if (dataLoading) {
+    return (
+      <div className="maps-page-loading">
+        <div className="loading-content">
+          <div className="loading-spinner"></div>
+          <h2>Loading Grid Infrastructure Data...</h2>
+          <p>Fetching buses, branches, and generators from database</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`maps-page ${leftSidebarOpen ? '' : 'sidebar-collapsed'} ${detailPanelOpen ? '' : 'detail-collapsed'} ${rightPanelOpen ? '' : 'rightpanel-collapsed'}`}>
+      
+      {/* Backend Not Connected Banner */}
+      {!dataLoading && buses.length === 0 && (
+        <div className="backend-warning-banner">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/>
+            <line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          <span>Backend API not connected. Map will display without real data. See INTEGRATION_GUIDE.md for setup instructions.</span>
+        </div>
+      )}
+
       {/* Left Sidebar - Layers */}
       <div className={`left-sidebar ${leftSidebarOpen ? 'open' : 'closed'}`}>
         <button className="sidebar-notch-right" onClick={() => setLeftSidebarOpen(!leftSidebarOpen)}>
@@ -832,26 +1300,102 @@ const Maps = () => {
                 <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
                 <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
               </svg>
-              <span>DB</span>
+              <span>Database</span>
             </div>
             {expandedSections.database && (
               <div className="section-items">
-                <div className="layer-item">
-                  <input type="checkbox" id="db-live" defaultChecked />
-                  <label htmlFor="db-live">Live Data</label>
-                </div>
-                <div className="layer-item">
-                  <input type="checkbox" id="db-historical" />
-                  <label htmlFor="db-historical">Historical Data</label>
-                </div>
-                <div className="layer-item">
-                  <input type="checkbox" id="db-analytics" />
-                  <label htmlFor="db-analytics">Analytics DB</label>
-                </div>
-                <div className="layer-item">
-                  <input type="checkbox" id="db-backup" />
-                  <label htmlFor="db-backup">Backup DB</label>
-                </div>
+                {databases.map(db => (
+                  <div key={db.id} className="layer-item database-item">
+                    <input 
+                      type="radio" 
+                      id={`db-${db.id}`} 
+                      name="database"
+                      checked={db.active}
+                      onChange={() => {
+                        setDatabases(databases.map(d => ({
+                          ...d,
+                          active: d.id === db.id
+                        })));
+                      }}
+                    />
+                    <label htmlFor={`db-${db.id}`} title={db.path}>{db.name}</label>
+                    {databases.length > 1 && (
+                      <button 
+                        className="delete-db-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDatabases(databases.filter(d => d.id !== db.id));
+                        }}
+                        title="Remove database"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <line x1="18" y1="6" x2="6" y2="18"/>
+                          <line x1="6" y1="6" x2="18" y2="18"/>
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                ))}
+                
+                {!showAddDatabase ? (
+                  <button 
+                    className="add-database-btn"
+                    onClick={() => setShowAddDatabase(true)}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <line x1="12" y1="5" x2="12" y2="19"/>
+                      <line x1="5" y1="12" x2="19" y2="12"/>
+                    </svg>
+                    Add Database
+                  </button>
+                ) : (
+                  <div className="add-database-form">
+                    <input
+                      type="text"
+                      placeholder="Database name"
+                      value={newDbName}
+                      onChange={(e) => setNewDbName(e.target.value)}
+                      className="db-input"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Database path or URL"
+                      value={newDbPath}
+                      onChange={(e) => setNewDbPath(e.target.value)}
+                      className="db-input"
+                    />
+                    <div className="db-form-actions">
+                      <button 
+                        className="db-save-btn"
+                        onClick={() => {
+                          if (newDbName && newDbPath) {
+                            setDatabases([...databases, {
+                              id: Date.now(),
+                              name: newDbName,
+                              active: false,
+                              path: newDbPath
+                            }]);
+                            setNewDbName('');
+                            setNewDbPath('');
+                            setShowAddDatabase(false);
+                          }
+                        }}
+                      >
+                        Save
+                      </button>
+                      <button 
+                        className="db-cancel-btn"
+                        onClick={() => {
+                          setNewDbName('');
+                          setNewDbPath('');
+                          setShowAddDatabase(false);
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -869,26 +1413,121 @@ const Maps = () => {
             </div>
             {expandedSections.filters && (
               <div className="section-items">
-                <div className="layer-item">
-                  <input type="checkbox" id="filter-voltage" />
-                  <label htmlFor="filter-voltage">Voltage Range</label>
-                </div>
-                <div className="layer-item">
-                  <input type="checkbox" id="filter-capacity" />
-                  <label htmlFor="filter-capacity">Capacity</label>
-                </div>
-                <div className="layer-item">
-                  <input type="checkbox" id="filter-status" defaultChecked />
-                  <label htmlFor="filter-status">Operational Status</label>
-                </div>
-                <div className="layer-item">
-                  <input type="checkbox" id="filter-alerts" />
-                  <label htmlFor="filter-alerts">Active Alerts Only</label>
-                </div>
-                <div className="layer-item">
-                  <input type="checkbox" id="filter-region" />
-                  <label htmlFor="filter-region">Region</label>
-                </div>
+                {/* Voltage Filters */}
+                {filters.voltageRanges.length > 0 && (
+                  <div className="filter-group">
+                    <div className="filter-group-header">Voltage Levels</div>
+                    {filters.voltageRanges.map(voltage => (
+                      <div key={voltage.value} className="layer-item">
+                        <input 
+                          type="checkbox" 
+                          id={`filter-voltage-${voltage.value}`}
+                          checked={activeFilters.voltages.includes(voltage.value)}
+                          onChange={(e) => {
+                            setActiveFilters(prev => ({
+                              ...prev,
+                              voltages: e.target.checked 
+                                ? [...prev.voltages, voltage.value]
+                                : prev.voltages.filter(v => v !== voltage.value)
+                            }));
+                          }}
+                        />
+                        <label htmlFor={`filter-voltage-${voltage.value}`}>
+                          {voltage.label} ({voltage.count})
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                {/* Capacity Filters */}
+                {filters.capacityRanges.length > 0 && (
+                  <div className="filter-group">
+                    <div className="filter-group-header">Generator Capacity</div>
+                    {filters.capacityRanges.map((range, idx) => (
+                      <div key={idx} className="layer-item">
+                        <input 
+                          type="checkbox" 
+                          id={`filter-capacity-${idx}`}
+                          checked={activeFilters.capacities.includes(idx)}
+                          onChange={(e) => {
+                            setActiveFilters(prev => ({
+                              ...prev,
+                              capacities: e.target.checked 
+                                ? [...prev.capacities, idx]
+                                : prev.capacities.filter(c => c !== idx)
+                            }));
+                          }}
+                        />
+                        <label htmlFor={`filter-capacity-${idx}`}>
+                          {range.label} ({range.count})
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                {/* Status Filters */}
+                {filters.statuses.length > 0 && (
+                  <div className="filter-group">
+                    <div className="filter-group-header">Operational Status</div>
+                    {filters.statuses.map(status => (
+                      <div key={status.value} className="layer-item">
+                        <input 
+                          type="checkbox" 
+                          id={`filter-status-${status.value}`}
+                          defaultChecked
+                          onChange={(e) => {
+                            setActiveFilters(prev => ({
+                              ...prev,
+                              statuses: e.target.checked 
+                                ? [...prev.statuses, status.value]
+                                : prev.statuses.filter(s => s !== status.value)
+                            }));
+                          }}
+                        />
+                        <label htmlFor={`filter-status-${status.value}`}>
+                          {status.label} ({status.count})
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                {/* Region Filters */}
+                {filters.regions.length > 0 && (
+                  <div className="filter-group">
+                    <div className="filter-group-header">Regions</div>
+                    {filters.regions.map(region => (
+                      <div key={region.value} className="layer-item">
+                        <input 
+                          type="checkbox" 
+                          id={`filter-region-${region.value}`}
+                          checked={activeFilters.regions.includes(region.value)}
+                          onChange={(e) => {
+                            setActiveFilters(prev => ({
+                              ...prev,
+                              regions: e.target.checked 
+                                ? [...prev.regions, region.value]
+                                : prev.regions.filter(r => r !== region.value)
+                            }));
+                          }}
+                        />
+                        <label htmlFor={`filter-region-${region.value}`}>
+                          {region.label} ({region.count})
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                {/* Show message if no data */}
+                {filters.voltageRanges.length === 0 && filters.capacityRanges.length === 0 && 
+                 filters.statuses.length === 0 && filters.regions.length === 0 && (
+                  <div className="layer-item" style={{color: 'rgba(255,255,255,0.5)', fontSize: '12px', fontStyle: 'italic'}}>
+                    No filter options available. Load data first.
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1143,72 +1782,116 @@ const Maps = () => {
               <polyline points={detailPanelOpen ? "15 18 9 12 15 6" : "9 18 15 12 9 6"}/>
             </svg>
           </button>
-          <span className="detail-count">Substations [4]</span>
-          <button className="close-detail-btn">×</button>
+          <span className="detail-count">
+            {selectedSubstation ? 'Substation Details' : `Substations [${buses.length}]`}
+          </span>
+          {selectedSubstation && (
+            <button className="close-detail-btn" onClick={() => setSelectedSubstation(null)}>×</button>
+          )}
         </div>
         <div className="detail-panel-content">
-          <div className="substation-card selected">
-            <div className="card-header">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#06b6d4" strokeWidth="2">
-                <circle cx="12" cy="12" r="10"/>
-              </svg>
-              <span className="station-name">Indian Pass - 69kV</span>
-              <div className="card-actions">
-                <button className="icon-btn">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <circle cx="12" cy="12" r="1"/>
-                  </svg>
-                </button>
-                <button className="icon-btn">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polyline points="18 15 12 9 6 15"/>
-                  </svg>
-                </button>
+          {selectedSubstation ? (
+            <div className="substation-card selected">
+              <div className="card-header">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#06b6d4" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10"/>
+                </svg>
+                <span className="station-name">{selectedSubstation.name}</span>
+                <div className="card-actions">
+                  <button className="icon-btn" onClick={() => {
+                    if (map.current && selectedSubstation.coordinates) {
+                      map.current.flyTo({
+                        center: [selectedSubstation.coordinates.lng, selectedSubstation.coordinates.lat],
+                        zoom: 14
+                      });
+                    }
+                  }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="12" cy="12" r="10"/>
+                      <polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                  </button>
+                  <button className="icon-btn" onClick={() => setSelectedSubstation(null)}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <line x1="18" y1="6" x2="6" y2="18"/>
+                      <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div className="card-body">
+                <table className="detail-table">
+                  <tbody>
+                    <tr>
+                      <td>Bus ID</td>
+                      <td className="value-col">{selectedSubstation.id}</td>
+                    </tr>
+                    <tr className="highlight-row">
+                      <td>Nominal Voltage (kV)</td>
+                      <td className="value-col">{selectedSubstation.voltage || 'N/A'}</td>
+                    </tr>
+                    {selectedSubstation.county && (
+                      <tr>
+                        <td>County</td>
+                        <td className="value-col">{selectedSubstation.county}</td>
+                      </tr>
+                    )}
+                    {selectedSubstation.state && (
+                      <tr>
+                        <td>State</td>
+                        <td className="value-col">{selectedSubstation.state}</td>
+                      </tr>
+                    )}
+                    {selectedSubstation.shortCircuit && (
+                      <tr>
+                        <td>3-Phase Short Circuit (MVA)</td>
+                        <td className="value-col">{parseFloat(selectedSubstation.shortCircuit).toFixed(2)}</td>
+                      </tr>
+                    )}
+                    <tr>
+                      <td colSpan="2" className="section-header-row">
+                        <strong>Historical Average LMP ($/MWh)</strong>
+                      </td>
+                    </tr>
+                    {selectedSubstation.lmp2022 && (
+                      <tr className="data-row">
+                        <td>2022</td>
+                        <td className="value-col">${parseFloat(selectedSubstation.lmp2022).toFixed(2)}</td>
+                      </tr>
+                    )}
+                    {selectedSubstation.lmp2023 && (
+                      <tr className="data-row">
+                        <td>2023</td>
+                        <td className="value-col">${parseFloat(selectedSubstation.lmp2023).toFixed(2)}</td>
+                      </tr>
+                    )}
+                    {selectedSubstation.lmp2024 && (
+                      <tr className="data-row">
+                        <td>2024</td>
+                        <td className="value-col">${parseFloat(selectedSubstation.lmp2024).toFixed(2)}</td>
+                      </tr>
+                    )}
+                    {selectedSubstation.lmp2025 && (
+                      <tr className="data-row">
+                        <td>2025</td>
+                        <td className="value-col">${parseFloat(selectedSubstation.lmp2025).toFixed(2)}</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
-            <div className="card-body">
-              <table className="detail-table">
-                <tbody>
-                  <tr>
-                    <td>Substation Bus Number</td>
-                    <td className="value-col">3033</td>
-                  </tr>
-                  <tr className="highlight-row">
-                    <td>Substation Bus kV Nominal</td>
-                    <td className="value-col">69.000</td>
-                  </tr>
-                  <tr>
-                    <td>Substation Area</td>
-                    <td className="value-col">GUF</td>
-                  </tr>
-                  <tr>
-                    <td>Operating Voltage (kV)</td>
-                    <td className="value-col">68</td>
-                  </tr>
-                  <tr>
-                    <td>Substation Name</td>
-                    <td className="value-col">Indian Pass</td>
-                  </tr>
-                  <tr>
-                    <td colSpan="2" className="section-header-row">
-                      <strong># Pre-Existing Issues Summer Peak Substation Discharging</strong>
-                    </td>
-                  </tr>
-                  <tr className="data-row">
-                    <td colSpan="2">9</td>
-                  </tr>
-                  <tr>
-                    <td colSpan="2" className="section-header-row">
-                      <strong>Headroom Capacity (MW) Summer Peak Substation Discharging</strong>
-                    </td>
-                  </tr>
-                  <tr className="data-row">
-                    <td colSpan="2">78.5</td>
-                  </tr>
-                </tbody>
-              </table>
+          ) : (
+            <div className="no-selection-message">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="1.5">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" y1="16" x2="12" y2="12"/>
+                <line x1="12" y1="8" x2="12.01" y2="8"/>
+              </svg>
+              <p>Click on a bus node to view detailed information</p>
+              <p className="sub-text">{buses.length} buses available in the system</p>
             </div>
-          </div>
+          )}
         </div>
       </div>
 

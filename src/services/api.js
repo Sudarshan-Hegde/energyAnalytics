@@ -94,6 +94,42 @@ export const adminAPI = {
   updateSettings: (settings) => api.put('/admin/settings', settings),
 };
 
+// Grid Data APIs - Real infrastructure data from SQLite database
+export const gridDataAPI = {
+  // Get all buses with infrastructure and LMP data
+  getBuses: () => api.get('/grid-data/buses'),
+  
+  // Get single bus by ID
+  getBusById: (id) => api.get(`/grid-data/buses/${id}`),
+  
+  // Get all branches (transmission lines)
+  getBranches: () => api.get('/grid-data/branches'),
+  
+  // Get branches by status (e.g., 'Closed', 'Open')
+  getBranchesByStatus: (status) => api.get(`/grid-data/branches?status=${status}`),
+  
+  // Get all generators
+  getGenerators: () => api.get('/grid-data/generators'),
+  
+  // Get generators by status
+  getGeneratorsByStatus: (status) => api.get(`/grid-data/generators?status=${status}`),
+  
+  // Get economic data with LMP history and forecasts
+  getEconomicData: () => api.get('/grid-data/economic'),
+  
+  // Get LMP history by bus
+  getLMPHistory: (busId) => api.get(`/grid-data/lmp-history/${busId}`),
+  
+  // Get LMP forecast data
+  getLMPForecast: () => api.get('/grid-data/lmp-forecast'),
+  
+  // Get loss components for efficiency analysis
+  getLossComponents: () => api.get('/grid-data/loss-components'),
+  
+  // Get aggregated statistics
+  getStatistics: () => api.get('/grid-data/statistics'),
+};
+
 // WebSocket for real-time data (Kafka integration)
 export const createWebSocketConnection = (onMessage, onError) => {
   const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws';

@@ -5,6 +5,7 @@ import Login from './pages/Login';
 import Maps from './pages/Maps';
 import Analytics from './pages/Analytics';
 import Admin from './pages/Admin';
+import Analysis from './pages/Analysis';
 import './App.css';
 
 function App() {
@@ -63,6 +64,10 @@ function App() {
             <Route 
               path="/" 
               element={user ? <Navigate to="/maps" /> : <Navigate to="/login" />} 
+            />
+            <Route 
+              path="/analysis" 
+              element={user ? <Analysis /> : <Navigate to="/login" />} 
             />
             <Route 
               path="/maps" 
