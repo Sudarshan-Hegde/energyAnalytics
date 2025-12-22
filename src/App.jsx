@@ -11,12 +11,18 @@ import './App.css';
 function App() {
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedISO, setSelectedISO] = useState('iso_ne');
 
   useEffect(() => {
     // Check if user is logged in
     const savedUser = localStorage.getItem('user');
     if (savedUser) {
       setUser(JSON.parse(savedUser));
+    }
+    // Check for saved ISO selection
+    const savedISO = localStorage.getItem('selectedISO');
+    if (savedISO) {
+      setSelectedISO(savedISO);
     }
     setIsLoading(false);
   }, []);
@@ -28,6 +34,11 @@ function App() {
   const handleLogout = () => {
     localStorage.removeItem('user');
     setUser(null);
+  };
+  
+  const handleISOChange = (isoId) => {
+    setSelectedISO(isoId);
+    localStorage.setItem('selectedISO', isoId);
   };
 
   if (isLoading) {
@@ -54,7 +65,7 @@ function App() {
   return (
     <Router>
       <div className="app">
-        {user && <Navbar user={user} onLogout={handleLogout} />}
+        {user && <Navbar user={user} onLogout={handleLogout} selectedISO={selectedISO} onISOChange={handleISOChange} />}
         <main className="main-content">
           <Routes>
             <Route 
@@ -71,7 +82,7 @@ function App() {
             />
             <Route 
               path="/maps" 
-              element={user ? <Maps /> : <Navigate to="/login" />} 
+              element={user ? <Maps selectedISO={selectedISO} /> : <Navigate to="/login" />} 
             />
             <Route 
               path="/analytics" 

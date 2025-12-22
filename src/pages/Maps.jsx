@@ -4,10 +4,20 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import './Maps.css';
 import useGridInfrastructure from '../hooks/useGridInfrastructure';
 
-const Maps = () => {
+const Maps = ({ selectedISO }) => {
   const mapContainer = useRef(null);
   const map = useRef(null);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [showFilterBar, setShowFilterBar] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [showSearchPanel, setShowSearchPanel] = useState(false);
+  const [selectedSubstations, setSelectedSubstations] = useState([]);
+  const [selectedHeatmap, setSelectedHeatmap] = useState('');
+  const [leftSidebarWidth, setLeftSidebarWidth] = useState(280);
+  const [detailPanelWidth, setDetailPanelWidth] = useState(380);
+  const [isResizingLeft, setIsResizingLeft] = useState(false);
+  const [isResizingDetail, setIsResizingDetail] = useState(false);
   
   // Fetch real grid infrastructure data
   const { 
@@ -90,7 +100,6 @@ const Maps = () => {
     overpassGenerators: false,
     overpassCables: false
   });
-  const [selectedSubstation, setSelectedSubstation] = useState(null);
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [detailPanelOpen, setDetailPanelOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
@@ -101,18 +110,11 @@ const Maps = () => {
     generators: false,
     loads: false,
     transformers: false,
-    database: false,
-    filters: false,
-    overpass: false
+    overpass: false,
+    heatmaps: false
   });
   
-  // Database management state
-  const [databases, setDatabases] = useState([
-    { id: 1, name: 'gridsense_iso_ne_sample.db', active: true, path: './gridsense_iso_ne_sample.db' }
-  ]);
-  const [showAddDatabase, setShowAddDatabase] = useState(false);
-  const [newDbName, setNewDbName] = useState('');
-  const [newDbPath, setNewDbPath] = useState('');
+  // Remove database management state - moved to Navbar
   const [loadingOverpass, setLoadingOverpass] = useState({});
   const [activeLayers, setActiveLayers] = useState([]);
   const [overpassCache, setOverpassCache] = useState({});
@@ -306,15 +308,15 @@ const Maps = () => {
         map.current = new maplibregl.Map({
           container: mapContainer.current,
           style: createMapStyle('satellite'), // OSM satellite with boundaries
-          center: [0, 20], // Centered for good globe view
-          zoom: 1.5,
+          center: [-95, 37], // Centered on USA
+          zoom: 4,
           renderWorldCopies: false, // Disable world wrapping for globe
           attributionControl: false,
           antialias: true,
           maxPitch: 85
         });
 
-      // Add navigation controls
+      // Add navigation controls back
       map.current.addControl(new maplibregl.NavigationControl(), 'top-right');
       map.current.addControl(new maplibregl.FullscreenControl(), 'top-right');
       
@@ -496,6 +498,9 @@ const Maps = () => {
         type: 'circle',
         source: 'real-buses-source',
         filter: ['!', ['has', 'point_count']],
+        layout: {
+          'visibility': 'visible'
+        },
         paint: {
           'circle-color': [
             'match',
@@ -543,11 +548,14 @@ const Maps = () => {
 
       // Add click handler for bus selection
       map.current.on('click', 'real-buses-points', (e) => {
+        console.log('Bus clicked!', e.features);
         if (e.features.length > 0) {
           const feature = e.features[0];
           const props = feature.properties;
           
-          setSelectedSubstation({
+          console.log('Bus data:', props);
+          
+          const substationData = {
             id: props.id,
             name: props.name,
             voltage: props.voltage,
@@ -559,10 +567,10 @@ const Maps = () => {
             lmp2024: props.lmp2024,
             lmp2025: props.lmp2025,
             coordinates: e.lngLat
-          });
+          };
           
-          // Open detail panel
-          setDetailPanelOpen(true);
+          // Use multi-select handler
+          handleSubstationClick(substationData);
         }
       });
 
@@ -770,6 +778,201 @@ const Maps = () => {
     }
   };
 
+  // Search handler using Nominatim geocoding
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return;
+    
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&limit=5`
+      );
+      const data = await response.json();
+      setSearchResults(data);
+    } catch (error) {
+      console.error('Error searching location:', error);
+      setSearchResults([]);
+    }
+  };
+
+  const selectSearchResult = (result) => {
+    if (map.current) {
+      map.current.flyTo({
+        center: [parseFloat(result.lon), parseFloat(result.lat)],
+        zoom: 12,
+        essential: true
+      });
+      setShowSearchPanel(false);
+      setSearchQuery('');
+      setSearchResults([]);
+    }
+  };
+
+  // Handle substation click
+  const handleSubstationClick = (substationData) => {
+    setSelectedSubstations(prev => {
+      const exists = prev.find(s => s.id === substationData.id);
+      if (exists) {
+        // Remove if already selected
+        return prev.filter(s => s.id !== substationData.id);
+      } else {
+        // Add to selection
+        return [...prev, substationData];
+      }
+    });
+    
+    // Always open detail panel when clicking a substation
+    setDetailPanelOpen(true);
+  };
+
+  const handleHeatmapChange = (scenario) => {
+    setSelectedHeatmap(scenario);
+    
+    if (!map.current) return;
+    
+    if (!scenario) {
+      // Clear heat map layer
+      if (map.current.getLayer('heatmap-layer')) {
+        map.current.removeLayer('heatmap-layer');
+      }
+      if (map.current.getSource('heatmap-source')) {
+        map.current.removeSource('heatmap-source');
+      }
+      console.log('Heat map cleared');
+      return;
+    }
+    
+    // Apply heat map based on selected scenario
+    console.log('Applying heat map:', scenario, 'for ISO:', selectedISO);
+    
+    // Parse scenario (e.g., "spring-charging" -> season: spring, scenario: charging)
+    const [season, scenarioType] = scenario.split('-');
+    
+    // Create heat map from bus data with LMP values
+    // Use appropriate LMP data based on season and scenario
+    const heatmapData = {
+      type: 'FeatureCollection',
+      features: buses.map(bus => ({
+        type: 'Feature',
+        geometry: {
+          type: 'Point',
+          coordinates: [bus.longitude, bus.latitude]
+        },
+        properties: {
+          // Use LMP data as heat intensity - adjust based on scenario
+          // For charging: higher LMP means more heat
+          // For discharging: inverse relationship
+          intensity: scenarioType === 'charging' 
+            ? (bus.lmp2024 || bus.lmp2023 || 50) 
+            : 100 - (bus.lmp2024 || bus.lmp2023 || 50)
+        }
+      }))
+    };
+    
+    // Remove existing heat map if any
+    if (map.current.getLayer('heatmap-layer')) {
+      map.current.removeLayer('heatmap-layer');
+    }
+    if (map.current.getSource('heatmap-source')) {
+      map.current.removeSource('heatmap-source');
+    }
+    
+    // Add new heat map source
+    map.current.addSource('heatmap-source', {
+      type: 'geojson',
+      data: heatmapData
+    });
+    
+    // Add heat map layer
+    map.current.addLayer({
+      id: 'heatmap-layer',
+      type: 'heatmap',
+      source: 'heatmap-source',
+      paint: {
+        // Increase weight as intensity increases
+        'heatmap-weight': [
+          'interpolate',
+          ['linear'],
+          ['get', 'intensity'],
+          0, 0,
+          100, 1
+        ],
+        // Increase intensity as zoom level increases
+        'heatmap-intensity': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          0, 1,
+          9, 3
+        ],
+        // Color ramp for heatmap (blue -> cyan -> green -> yellow -> red)
+        'heatmap-color': [
+          'interpolate',
+          ['linear'],
+          ['heatmap-density'],
+          0, 'rgba(33,102,172,0)',
+          0.2, 'rgb(103,169,207)',
+          0.4, 'rgb(209,229,240)',
+          0.6, 'rgb(253,219,199)',
+          0.8, 'rgb(239,138,98)',
+          1, 'rgb(178,24,43)'
+        ],
+        // Adjust heatmap radius by zoom level
+        'heatmap-radius': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          0, 2,
+          9, 20
+        ],
+        // Transition from heatmap to circle layer at higher zoom levels
+        'heatmap-opacity': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          7, 0.8,
+          14, 0.6
+        ]
+      }
+    }, 'real-buses-points'); // Insert below bus points
+    
+    console.log('Heat map applied:', season, scenarioType);
+  };
+
+  // Sidebar resize handlers
+  const startResizeLeft = () => setIsResizingLeft(true);
+  const startResizeDetail = () => setIsResizingDetail(true);
+  
+  const stopResize = () => {
+    setIsResizingLeft(false);
+    setIsResizingDetail(false);
+  };
+  
+  const handleMouseMove = (e) => {
+    if (isResizingLeft) {
+      const newWidth = e.clientX;
+      if (newWidth >= 200 && newWidth <= 500) {
+        setLeftSidebarWidth(newWidth);
+      }
+    }
+    if (isResizingDetail) {
+      const newWidth = window.innerWidth - e.clientX;
+      if (newWidth >= 300 && newWidth <= 600) {
+        setDetailPanelWidth(newWidth);
+      }
+    }
+  };
+  
+  useEffect(() => {
+    if (isResizingLeft || isResizingDetail) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', stopResize);
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', stopResize);
+      };
+    }
+  }, [isResizingLeft, isResizingDetail]);
+
   const toggleLayer = (layerName) => {
     const newVisibility = !visibleLayers[layerName];
     
@@ -778,7 +981,7 @@ const Maps = () => {
       [layerName]: newVisibility
     }));
     
-    // Handle Overpass API layer toggling
+    // Handle layer visibility on map
     if (!map.current) return;
     
     // Handle street labels toggle
@@ -788,7 +991,39 @@ const Maps = () => {
       }
       return;
     }
+
+    // Handle Grid Infrastructure layers
+    if (layerName === 'substations') {
+      const layers = ['real-buses-clusters', 'real-buses-cluster-count', 'real-buses-points', 'real-buses-labels'];
+      layers.forEach(layerId => {
+        if (map.current.getLayer(layerId)) {
+          map.current.setLayoutProperty(layerId, 'visibility', newVisibility ? 'visible' : 'none');
+        }
+      });
+      return;
+    }
+
+    if (layerName === 'transmissionLines') {
+      if (map.current.getLayer('real-branches-lines')) {
+        map.current.setLayoutProperty('real-branches-lines', 'visibility', newVisibility ? 'visible' : 'none');
+      }
+      if (map.current.getLayer('real-branches-labels')) {
+        map.current.setLayoutProperty('real-branches-labels', 'visibility', newVisibility ? 'visible' : 'none');
+      }
+      return;
+    }
+
+    if (layerName === 'powerPlants') {
+      const layers = ['real-generators-points', 'real-generators-labels'];
+      layers.forEach(layerId => {
+        if (map.current.getLayer(layerId)) {
+          map.current.setLayoutProperty(layerId, 'visibility', newVisibility ? 'visible' : 'none');
+        }
+      });
+      return;
+    }
     
+    // Handle Overpass API layer toggling
     const overpassLayers = ['overpassPowerLines', 'overpassSubstations', 'overpassTransformers', 'overpassTowers', 'overpassGenerators', 'overpassCables'];
     
     if (overpassLayers.includes(layerName)) {
@@ -1272,7 +1507,7 @@ const Maps = () => {
       )}
 
       {/* Left Sidebar - Layers */}
-      <div className={`left-sidebar ${leftSidebarOpen ? 'open' : 'closed'}`}>
+      <div className={`left-sidebar ${leftSidebarOpen ? 'open' : 'closed'} ${isResizingLeft ? 'resizing' : ''}`} style={{ width: leftSidebarOpen ? `${leftSidebarWidth}px` : '0' }}>
         <button className="sidebar-notch-right" onClick={() => setLeftSidebarOpen(!leftSidebarOpen)}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <polyline points={leftSidebarOpen ? "15 18 9 12 15 6" : "9 18 15 12 9 6"}/>
@@ -1289,351 +1524,7 @@ const Maps = () => {
         </div>
 
         <div className="sidebar-content">
-          {/* Database Section */}
-          <div className="layer-section">
-            <div className="section-header" onClick={() => toggleSection('database')}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points={expandedSections.database ? "6 9 12 15 18 9" : "9 18 15 12 9 6"}/>
-              </svg>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <ellipse cx="12" cy="5" rx="9" ry="3"/>
-                <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
-                <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
-              </svg>
-              <span>Database</span>
-            </div>
-            {expandedSections.database && (
-              <div className="section-items">
-                {databases.map(db => (
-                  <div key={db.id} className="layer-item database-item">
-                    <input 
-                      type="radio" 
-                      id={`db-${db.id}`} 
-                      name="database"
-                      checked={db.active}
-                      onChange={() => {
-                        setDatabases(databases.map(d => ({
-                          ...d,
-                          active: d.id === db.id
-                        })));
-                      }}
-                    />
-                    <label htmlFor={`db-${db.id}`} title={db.path}>{db.name}</label>
-                    {databases.length > 1 && (
-                      <button 
-                        className="delete-db-btn"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDatabases(databases.filter(d => d.id !== db.id));
-                        }}
-                        title="Remove database"
-                      >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <line x1="18" y1="6" x2="6" y2="18"/>
-                          <line x1="6" y1="6" x2="18" y2="18"/>
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-                ))}
-                
-                {!showAddDatabase ? (
-                  <button 
-                    className="add-database-btn"
-                    onClick={() => setShowAddDatabase(true)}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <line x1="12" y1="5" x2="12" y2="19"/>
-                      <line x1="5" y1="12" x2="19" y2="12"/>
-                    </svg>
-                    Add Database
-                  </button>
-                ) : (
-                  <div className="add-database-form">
-                    <input
-                      type="text"
-                      placeholder="Database name"
-                      value={newDbName}
-                      onChange={(e) => setNewDbName(e.target.value)}
-                      className="db-input"
-                    />
-                    <input
-                      type="text"
-                      placeholder="Database path or URL"
-                      value={newDbPath}
-                      onChange={(e) => setNewDbPath(e.target.value)}
-                      className="db-input"
-                    />
-                    <div className="db-form-actions">
-                      <button 
-                        className="db-save-btn"
-                        onClick={() => {
-                          if (newDbName && newDbPath) {
-                            setDatabases([...databases, {
-                              id: Date.now(),
-                              name: newDbName,
-                              active: false,
-                              path: newDbPath
-                            }]);
-                            setNewDbName('');
-                            setNewDbPath('');
-                            setShowAddDatabase(false);
-                          }
-                        }}
-                      >
-                        Save
-                      </button>
-                      <button 
-                        className="db-cancel-btn"
-                        onClick={() => {
-                          setNewDbName('');
-                          setNewDbPath('');
-                          setShowAddDatabase(false);
-                        }}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Filters Section */}
-          <div className="layer-section">
-            <div className="section-header" onClick={() => toggleSection('filters')}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points={expandedSections.filters ? "6 9 12 15 18 9" : "9 18 15 12 9 6"}/>
-              </svg>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
-              </svg>
-              <span>Filters</span>
-            </div>
-            {expandedSections.filters && (
-              <div className="section-items">
-                {/* Voltage Filters */}
-                {filters.voltageRanges.length > 0 && (
-                  <div className="filter-group">
-                    <div className="filter-group-header">Voltage Levels</div>
-                    {filters.voltageRanges.map(voltage => (
-                      <div key={voltage.value} className="layer-item">
-                        <input 
-                          type="checkbox" 
-                          id={`filter-voltage-${voltage.value}`}
-                          checked={activeFilters.voltages.includes(voltage.value)}
-                          onChange={(e) => {
-                            setActiveFilters(prev => ({
-                              ...prev,
-                              voltages: e.target.checked 
-                                ? [...prev.voltages, voltage.value]
-                                : prev.voltages.filter(v => v !== voltage.value)
-                            }));
-                          }}
-                        />
-                        <label htmlFor={`filter-voltage-${voltage.value}`}>
-                          {voltage.label} ({voltage.count})
-                        </label>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                
-                {/* Capacity Filters */}
-                {filters.capacityRanges.length > 0 && (
-                  <div className="filter-group">
-                    <div className="filter-group-header">Generator Capacity</div>
-                    {filters.capacityRanges.map((range, idx) => (
-                      <div key={idx} className="layer-item">
-                        <input 
-                          type="checkbox" 
-                          id={`filter-capacity-${idx}`}
-                          checked={activeFilters.capacities.includes(idx)}
-                          onChange={(e) => {
-                            setActiveFilters(prev => ({
-                              ...prev,
-                              capacities: e.target.checked 
-                                ? [...prev.capacities, idx]
-                                : prev.capacities.filter(c => c !== idx)
-                            }));
-                          }}
-                        />
-                        <label htmlFor={`filter-capacity-${idx}`}>
-                          {range.label} ({range.count})
-                        </label>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                
-                {/* Status Filters */}
-                {filters.statuses.length > 0 && (
-                  <div className="filter-group">
-                    <div className="filter-group-header">Operational Status</div>
-                    {filters.statuses.map(status => (
-                      <div key={status.value} className="layer-item">
-                        <input 
-                          type="checkbox" 
-                          id={`filter-status-${status.value}`}
-                          defaultChecked
-                          onChange={(e) => {
-                            setActiveFilters(prev => ({
-                              ...prev,
-                              statuses: e.target.checked 
-                                ? [...prev.statuses, status.value]
-                                : prev.statuses.filter(s => s !== status.value)
-                            }));
-                          }}
-                        />
-                        <label htmlFor={`filter-status-${status.value}`}>
-                          {status.label} ({status.count})
-                        </label>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                
-                {/* Region Filters */}
-                {filters.regions.length > 0 && (
-                  <div className="filter-group">
-                    <div className="filter-group-header">Regions</div>
-                    {filters.regions.map(region => (
-                      <div key={region.value} className="layer-item">
-                        <input 
-                          type="checkbox" 
-                          id={`filter-region-${region.value}`}
-                          checked={activeFilters.regions.includes(region.value)}
-                          onChange={(e) => {
-                            setActiveFilters(prev => ({
-                              ...prev,
-                              regions: e.target.checked 
-                                ? [...prev.regions, region.value]
-                                : prev.regions.filter(r => r !== region.value)
-                            }));
-                          }}
-                        />
-                        <label htmlFor={`filter-region-${region.value}`}>
-                          {region.label} ({region.count})
-                        </label>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                
-                {/* Show message if no data */}
-                {filters.voltageRanges.length === 0 && filters.capacityRanges.length === 0 && 
-                 filters.statuses.length === 0 && filters.regions.length === 0 && (
-                  <div className="layer-item" style={{color: 'rgba(255,255,255,0.5)', fontSize: '12px', fontStyle: 'italic'}}>
-                    No filter options available. Load data first.
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* OpenStreetMap Overpass Section */}
-          <div className="layer-section">
-            <div className="section-header" onClick={() => toggleSection('overpass')}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points={expandedSections.overpass ? "6 9 12 15 18 9" : "9 18 15 12 9 6"}/>
-              </svg>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
-                <circle cx="12" cy="10" r="3"/>
-              </svg>
-              <span>OSM Power Data</span>
-            </div>
-            {expandedSections.overpass && (
-              <div className="section-items">
-                <div className="layer-item">
-                  <input 
-                    type="checkbox" 
-                    id="street-labels"
-                    checked={visibleLayers.streetLabels}
-                    onChange={() => toggleLayer('streetLabels')}
-                  />
-                  <label htmlFor="street-labels">
-                    Street & Place Labels
-                  </label>
-                </div>
-                <div className="layer-item">
-                  <input 
-                    type="checkbox" 
-                    id="overpass-powerlines"
-                    checked={visibleLayers.overpassPowerLines}
-                    onChange={() => toggleLayer('overpassPowerLines')}
-                    disabled={loadingOverpass.overpassPowerLines}
-                  />
-                  <label htmlFor="overpass-powerlines">
-                    Transmission Lines {loadingOverpass.overpassPowerLines && '(Loading...)'}
-                  </label>
-                </div>
-                <div className="layer-item">
-                  <input 
-                    type="checkbox" 
-                    id="overpass-substations"
-                    checked={visibleLayers.overpassSubstations}
-                    onChange={() => toggleLayer('overpassSubstations')}
-                    disabled={loadingOverpass.overpassSubstations}
-                  />
-                  <label htmlFor="overpass-substations">
-                    Substations {loadingOverpass.overpassSubstations && '(Loading...)'}
-                  </label>
-                </div>
-                <div className="layer-item">
-                  <input 
-                    type="checkbox" 
-                    id="overpass-transformers"
-                    checked={visibleLayers.overpassTransformers}
-                    onChange={() => toggleLayer('overpassTransformers')}
-                    disabled={loadingOverpass.overpassTransformers}
-                  />
-                  <label htmlFor="overpass-transformers">
-                    Transformers {loadingOverpass.overpassTransformers && '(Loading...)'}
-                  </label>
-                </div>
-                <div className="layer-item">
-                  <input 
-                    type="checkbox" 
-                    id="overpass-towers"
-                    checked={visibleLayers.overpassTowers}
-                    onChange={() => toggleLayer('overpassTowers')}
-                    disabled={loadingOverpass.overpassTowers}
-                  />
-                  <label htmlFor="overpass-towers">
-                    Towers & Poles {loadingOverpass.overpassTowers && '(Loading...)'}
-                  </label>
-                </div>
-                <div className="layer-item">
-                  <input 
-                    type="checkbox" 
-                    id="overpass-generators"
-                    checked={visibleLayers.overpassGenerators}
-                    onChange={() => toggleLayer('overpassGenerators')}
-                    disabled={loadingOverpass.overpassGenerators}
-                  />
-                  <label htmlFor="overpass-generators">
-                    Generators {loadingOverpass.overpassGenerators && '(Loading...)'}
-                  </label>
-                </div>
-                <div className="layer-item">
-                  <input 
-                    type="checkbox" 
-                    id="overpass-cables"
-                    checked={visibleLayers.overpassCables}
-                    onChange={() => toggleLayer('overpassCables')}
-                    disabled={loadingOverpass.overpassCables}
-                  />
-                  <label htmlFor="overpass-cables">
-                    Underground Cables {loadingOverpass.overpassCables && '(Loading...)'}
-                  </label>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Grid Infrastructure Section */}
+          {/* Grid Infrastructure Section - MOVED UP */}
           <div className="layer-section">
             <div className="section-header" onClick={() => toggleSection('gridInfrastructure')}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1766,11 +1657,287 @@ const Maps = () => {
               </div>
             )}
           </div>
+
+          {/* Heat Maps Section - Moved Up */}
+          <div className="layer-section">
+            <div className="section-header" onClick={() => toggleSection('heatmaps')}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points={expandedSections.heatmaps ? "6 9 12 15 18 9" : "9 18 15 12 9 6"}/>
+              </svg>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M2 12h20M2 12a10 10 0 0 1 10-10M2 12a10 10 0 0 0 10 10M12 2a10 10 0 0 1 10 10M12 2a10 10 0 0 0-10 10"/>
+              </svg>
+              <span>Heat Maps</span>
+            </div>
+            {expandedSections.heatmaps && (
+              <div className="section-items">
+                <div className="layer-item">
+                  <label style={{ width: '100%', marginBottom: '8px', fontSize: '12px', fontWeight: '600', color: '#475569' }}>
+                    Select Scenario:
+                  </label>
+                  <select 
+                    className="heatmap-select"
+                    value={selectedHeatmap}
+                    onChange={(e) => handleHeatmapChange(e.target.value)}
+                    style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid rgba(59, 130, 246, 0.3)', fontSize: '13px' }}
+                  >
+                    <option value="">None</option>
+                    <option value="spring-charging">Spring - Charging</option>
+                    <option value="spring-discharging">Spring - Discharging</option>
+                    <option value="summer-charging">Summer - Charging</option>
+                    <option value="summer-discharging">Summer - Discharging</option>
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* OpenStreetMap Overpass Section */}
+          <div className="layer-section">
+            <div className="section-header" onClick={() => toggleSection('overpass')}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points={expandedSections.overpass ? "6 9 12 15 18 9" : "9 18 15 12 9 6"}/>
+              </svg>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                <circle cx="12" cy="10" r="3"/>
+              </svg>
+              <span>OSM Power Data</span>
+            </div>
+            {expandedSections.overpass && (
+              <div className="section-items">
+                <div className="layer-item">
+                  <input 
+                    type="checkbox" 
+                    id="street-labels"
+                    checked={visibleLayers.streetLabels}
+                    onChange={() => toggleLayer('streetLabels')}
+                  />
+                  <label htmlFor="street-labels">
+                    Street & Place Labels
+                  </label>
+                </div>
+                <div className="layer-item">
+                  <input 
+                    type="checkbox" 
+                    id="overpass-powerlines"
+                    checked={visibleLayers.overpassPowerLines}
+                    onChange={() => toggleLayer('overpassPowerLines')}
+                    disabled={loadingOverpass.overpassPowerLines}
+                  />
+                  <label htmlFor="overpass-powerlines">
+                    Transmission Lines {loadingOverpass.overpassPowerLines && '(Loading...)'}
+                  </label>
+                </div>
+                <div className="layer-item">
+                  <input 
+                    type="checkbox" 
+                    id="overpass-substations"
+                    checked={visibleLayers.overpassSubstations}
+                    onChange={() => toggleLayer('overpassSubstations')}
+                    disabled={loadingOverpass.overpassSubstations}
+                  />
+                  <label htmlFor="overpass-substations">
+                    Substations {loadingOverpass.overpassSubstations && '(Loading...)'}
+                  </label>
+                </div>
+                <div className="layer-item">
+                  <input 
+                    type="checkbox" 
+                    id="overpass-transformers"
+                    checked={visibleLayers.overpassTransformers}
+                    onChange={() => toggleLayer('overpassTransformers')}
+                    disabled={loadingOverpass.overpassTransformers}
+                  />
+                  <label htmlFor="overpass-transformers">
+                    Transformers {loadingOverpass.overpassTransformers && '(Loading...)'}
+                  </label>
+                </div>
+                <div className="layer-item">
+                  <input 
+                    type="checkbox" 
+                    id="overpass-towers"
+                    checked={visibleLayers.overpassTowers}
+                    onChange={() => toggleLayer('overpassTowers')}
+                    disabled={loadingOverpass.overpassTowers}
+                  />
+                  <label htmlFor="overpass-towers">
+                    Towers & Poles {loadingOverpass.overpassTowers && '(Loading...)'}
+                  </label>
+                </div>
+                <div className="layer-item">
+                  <input 
+                    type="checkbox" 
+                    id="overpass-generators"
+                    checked={visibleLayers.overpassGenerators}
+                    onChange={() => toggleLayer('overpassGenerators')}
+                    disabled={loadingOverpass.overpassGenerators}
+                  />
+                  <label htmlFor="overpass-generators">
+                    Generators {loadingOverpass.overpassGenerators && '(Loading...)'}
+                  </label>
+                </div>
+                <div className="layer-item">
+                  <input 
+                    type="checkbox" 
+                    id="overpass-cables"
+                    checked={visibleLayers.overpassCables}
+                    onChange={() => toggleLayer('overpassCables')}
+                    disabled={loadingOverpass.overpassCables}
+                  />
+                  <label htmlFor="overpass-cables">
+                    Underground Cables {loadingOverpass.overpassCables && '(Loading...)'}
+                  </label>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
+        {leftSidebarOpen && (
+          <div 
+            className="resize-handle resize-handle-right" 
+            onMouseDown={startResizeLeft}
+          />
+        )}
+      </div>
+
+      {/* Horizontal Filter Bar */}
+      <div 
+        className={`horizontal-filter-bar ${showFilterBar ? 'visible' : ''}`}
+        onMouseEnter={() => setShowFilterBar(true)}
+        onMouseLeave={() => setShowFilterBar(false)}
+      >
+        <div className="filter-bar-trigger">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+          </svg>
+          <span>Filters</span>
+        </div>
+        
+        {showFilterBar && (
+          <div className="filter-bar-content">
+            {/* State Filter */}
+            {filters.regions.length > 0 && (
+              <div className="filter-group-horizontal">
+                <label className="filter-label">State:</label>
+                <select 
+                  className="filter-select"
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setActiveFilters(prev => ({
+                      ...prev,
+                      regions: value ? [value] : []
+                    }));
+                  }}
+                  value={activeFilters.regions[0] || ''}
+                >
+                  <option value="">All States</option>
+                  {filters.regions.map(region => (
+                    <option key={region.value} value={region.value}>
+                      {region.label} ({region.count})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Voltage Filter */}
+            {filters.voltageRanges.length > 0 && (
+              <div className="filter-group-horizontal">
+                <label className="filter-label">Voltage:</label>
+                <select 
+                  className="filter-select"
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setActiveFilters(prev => ({
+                      ...prev,
+                      voltages: value ? [parseFloat(value)] : []
+                    }));
+                  }}
+                  value={activeFilters.voltages[0] || ''}
+                >
+                  <option value="">All Voltages</option>
+                  {filters.voltageRanges.map(voltage => (
+                    <option key={voltage.value} value={voltage.value}>
+                      {voltage.label} ({voltage.count})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Status Filter */}
+            {filters.statuses.length > 0 && (
+              <div className="filter-group-horizontal">
+                <label className="filter-label">Status:</label>
+                <select 
+                  className="filter-select"
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setActiveFilters(prev => ({
+                      ...prev,
+                      statuses: value ? [value] : []
+                    }));
+                  }}
+                  value={activeFilters.statuses[0] || ''}
+                >
+                  <option value="">All Status</option>
+                  {filters.statuses.map(status => (
+                    <option key={status.value} value={status.value}>
+                      {status.label} ({status.count})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Capacity Filter */}
+            {filters.capacityRanges.length > 0 && (
+              <div className="filter-group-horizontal">
+                <label className="filter-label">Capacity:</label>
+                <select 
+                  className="filter-select"
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setActiveFilters(prev => ({
+                      ...prev,
+                      capacities: value ? [parseInt(value)] : []
+                    }));
+                  }}
+                  value={activeFilters.capacities[0] || ''}
+                >
+                  <option value="">All Capacities</option>
+                  {filters.capacityRanges.map((range, idx) => (
+                    <option key={idx} value={idx}>
+                      {range.label} ({range.count})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Clear Filters Button */}
+            {(activeFilters.regions.length > 0 || activeFilters.voltages.length > 0 || 
+              activeFilters.statuses.length > 0 || activeFilters.capacities.length > 0) && (
+              <button 
+                className="clear-filters-btn"
+                onClick={() => setActiveFilters({ voltages: [], capacities: [], statuses: [], regions: [] })}
+              >
+                Clear All
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Center Detail Panel */}
-      <div className={`center-detail-panel ${detailPanelOpen ? 'open' : 'closed'}`}>
+      <div className={`center-detail-panel ${detailPanelOpen ? 'open' : 'closed'} ${isResizingDetail ? 'resizing' : ''}`} style={{ width: detailPanelOpen ? `${detailPanelWidth}px` : '0' }}>
+        {detailPanelOpen && (
+          <div 
+            className="resize-handle resize-handle-left" 
+            onMouseDown={startResizeDetail}
+          />
+        )}
         <button className="sidebar-notch-right" onClick={() => setDetailPanelOpen(!detailPanelOpen)}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <polyline points={detailPanelOpen ? "15 18 9 12 15 6" : "9 18 15 12 9 6"}/>
@@ -1783,103 +1950,138 @@ const Maps = () => {
             </svg>
           </button>
           <span className="detail-count">
-            {selectedSubstation ? 'Substation Details' : `Substations [${buses.length}]`}
+            {selectedSubstations.length > 0 ? `Selected Substations [${selectedSubstations.length}]` : `Substations [${buses.length}]`}
           </span>
-          {selectedSubstation && (
-            <button className="close-detail-btn" onClick={() => setSelectedSubstation(null)}>×</button>
+          {selectedSubstations.length > 0 && (
+            <button className="close-detail-btn" onClick={() => setSelectedSubstations([])}>Clear All</button>
           )}
         </div>
         <div className="detail-panel-content">
-          {selectedSubstation ? (
-            <div className="substation-card selected">
-              <div className="card-header">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#06b6d4" strokeWidth="2">
-                  <circle cx="12" cy="12" r="10"/>
-                </svg>
-                <span className="station-name">{selectedSubstation.name}</span>
-                <div className="card-actions">
-                  <button className="icon-btn" onClick={() => {
-                    if (map.current && selectedSubstation.coordinates) {
-                      map.current.flyTo({
-                        center: [selectedSubstation.coordinates.lng, selectedSubstation.coordinates.lat],
-                        zoom: 14
-                      });
-                    }
-                  }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          {selectedSubstations.length > 0 ? (
+            <div className="substations-list">
+              {selectedSubstations.map((substation, index) => (
+                <div key={substation.id} className="substation-dropdown">
+                  <div className="dropdown-header">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#06b6d4" strokeWidth="2">
                       <circle cx="12" cy="12" r="10"/>
-                      <polyline points="12 6 12 12 16 14"/>
                     </svg>
-                  </button>
-                  <button className="icon-btn" onClick={() => setSelectedSubstation(null)}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <line x1="18" y1="6" x2="6" y2="18"/>
-                      <line x1="6" y1="6" x2="18" y2="18"/>
-                    </svg>
-                  </button>
+                    <span className="station-name">{substation.name}</span>
+                    <button className="icon-btn" onClick={() => {
+                      setSelectedSubstations(prev => prev.filter(s => s.id !== substation.id));
+                    }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                      </svg>
+                    </button>
+                  </div>
+
+                  {/* Summary Dropdown */}
+                  <details className="info-section" open={index === 0}>
+                    <summary className="section-title">Summary</summary>
+                    <div className="section-content">
+                      <div className="info-row">
+                        <span className="info-label">Bus ID:</span>
+                        <span className="info-value">{substation.id}</span>
+                      </div>
+                      <div className="info-row">
+                        <span className="info-label">Voltage:</span>
+                        <span className="info-value">{substation.voltage || 'N/A'} kV</span>
+                      </div>
+                      <div className="info-row">
+                        <span className="info-label">Location:</span>
+                        <span className="info-value">{substation.county ? `${substation.county}, ${substation.state}` : substation.state || 'N/A'}</span>
+                      </div>
+                    </div>
+                  </details>
+
+                  {/* Basic Info Dropdown */}
+                  <details className="info-section">
+                    <summary className="section-title">Basic Info</summary>
+                    <div className="section-content">
+                      <div className="info-row">
+                        <span className="info-label">Bus ID:</span>
+                        <span className="info-value">{substation.id}</span>
+                      </div>
+                      <div className="info-row">
+                        <span className="info-label">Nominal Voltage:</span>
+                        <span className="info-value">{substation.voltage || 'N/A'} kV</span>
+                      </div>
+                      {substation.county && (
+                        <div className="info-row">
+                          <span className="info-label">County:</span>
+                          <span className="info-value">{substation.county}</span>
+                        </div>
+                      )}
+                      {substation.state && (
+                        <div className="info-row">
+                          <span className="info-label">State:</span>
+                          <span className="info-value">{substation.state}</span>
+                        </div>
+                      )}
+                      {substation.shortCircuit && (
+                        <div className="info-row">
+                          <span className="info-label">3-Phase Short Circuit:</span>
+                          <span className="info-value">{parseFloat(substation.shortCircuit).toFixed(2)} MVA</span>
+                        </div>
+                      )}
+                    </div>
+                  </details>
+
+                  {/* Power Flow Dropdown */}
+                  <details className="info-section">
+                    <summary className="section-title">Power Flow</summary>
+                    <div className="section-content">
+                      <div className="info-row">
+                        <span className="info-label">Active Power:</span>
+                        <span className="info-value">Data from backend</span>
+                      </div>
+                      <div className="info-row">
+                        <span className="info-label">Reactive Power:</span>
+                        <span className="info-value">Data from backend</span>
+                      </div>
+                      <div className="info-row">
+                        <span className="info-label">Power Factor:</span>
+                        <span className="info-value">Data from backend</span>
+                      </div>
+                    </div>
+                  </details>
+
+                  {/* Financial Dropdown */}
+                  <details className="info-section">
+                    <summary className="section-title">Financial</summary>
+                    <div className="section-content">
+                      <div className="info-row header-row">
+                        <span className="info-label">Historical Average LMP ($/MWh)</span>
+                      </div>
+                      {substation.lmp2022 && (
+                        <div className="info-row">
+                          <span className="info-label">2022:</span>
+                          <span className="info-value">${parseFloat(substation.lmp2022).toFixed(2)}</span>
+                        </div>
+                      )}
+                      {substation.lmp2023 && (
+                        <div className="info-row">
+                          <span className="info-label">2023:</span>
+                          <span className="info-value">${parseFloat(substation.lmp2023).toFixed(2)}</span>
+                        </div>
+                      )}
+                      {substation.lmp2024 && (
+                        <div className="info-row">
+                          <span className="info-label">2024:</span>
+                          <span className="info-value">${parseFloat(substation.lmp2024).toFixed(2)}</span>
+                        </div>
+                      )}
+                      {substation.lmp2025 && (
+                        <div className="info-row">
+                          <span className="info-label">2025:</span>
+                          <span className="info-value">${parseFloat(substation.lmp2025).toFixed(2)}</span>
+                        </div>
+                      )}
+                    </div>
+                  </details>
                 </div>
-              </div>
-              <div className="card-body">
-                <table className="detail-table">
-                  <tbody>
-                    <tr>
-                      <td>Bus ID</td>
-                      <td className="value-col">{selectedSubstation.id}</td>
-                    </tr>
-                    <tr className="highlight-row">
-                      <td>Nominal Voltage (kV)</td>
-                      <td className="value-col">{selectedSubstation.voltage || 'N/A'}</td>
-                    </tr>
-                    {selectedSubstation.county && (
-                      <tr>
-                        <td>County</td>
-                        <td className="value-col">{selectedSubstation.county}</td>
-                      </tr>
-                    )}
-                    {selectedSubstation.state && (
-                      <tr>
-                        <td>State</td>
-                        <td className="value-col">{selectedSubstation.state}</td>
-                      </tr>
-                    )}
-                    {selectedSubstation.shortCircuit && (
-                      <tr>
-                        <td>3-Phase Short Circuit (MVA)</td>
-                        <td className="value-col">{parseFloat(selectedSubstation.shortCircuit).toFixed(2)}</td>
-                      </tr>
-                    )}
-                    <tr>
-                      <td colSpan="2" className="section-header-row">
-                        <strong>Historical Average LMP ($/MWh)</strong>
-                      </td>
-                    </tr>
-                    {selectedSubstation.lmp2022 && (
-                      <tr className="data-row">
-                        <td>2022</td>
-                        <td className="value-col">${parseFloat(selectedSubstation.lmp2022).toFixed(2)}</td>
-                      </tr>
-                    )}
-                    {selectedSubstation.lmp2023 && (
-                      <tr className="data-row">
-                        <td>2023</td>
-                        <td className="value-col">${parseFloat(selectedSubstation.lmp2023).toFixed(2)}</td>
-                      </tr>
-                    )}
-                    {selectedSubstation.lmp2024 && (
-                      <tr className="data-row">
-                        <td>2024</td>
-                        <td className="value-col">${parseFloat(selectedSubstation.lmp2024).toFixed(2)}</td>
-                      </tr>
-                    )}
-                    {selectedSubstation.lmp2025 && (
-                      <tr className="data-row">
-                        <td>2025</td>
-                        <td className="value-col">${parseFloat(selectedSubstation.lmp2025).toFixed(2)}</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+              ))}
             </div>
           ) : (
             <div className="no-selection-message">
@@ -1888,7 +2090,7 @@ const Maps = () => {
                 <line x1="12" y1="16" x2="12" y2="12"/>
                 <line x1="12" y1="8" x2="12.01" y2="8"/>
               </svg>
-              <p>Click on a bus node to view detailed information</p>
+              <p>Click on bus nodes to view detailed information</p>
               <p className="sub-text">{buses.length} buses available in the system</p>
             </div>
           )}
@@ -1898,6 +2100,59 @@ const Maps = () => {
       {/* Map Container */}
       <div className="map-container-wrapper">
         <div className="map-main-content">
+          {/* Search Control - Fixed Position */}
+          <div className="map-search-control">
+            <button 
+              className="search-toggle-btn"
+              onClick={() => setShowSearchPanel(!showSearchPanel)}
+              title="Search location"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="11" cy="11" r="8"/>
+                <path d="m21 21-4.35-4.35"/>
+              </svg>
+            </button>
+            
+            {showSearchPanel && (
+              <div className="search-panel">
+                <div className="search-input-wrapper">
+                  <input
+                    type="text"
+                    className="search-input"
+                    placeholder="Search location..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                  />
+                  <button className="search-btn" onClick={handleSearch}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="11" cy="11" r="8"/>
+                      <path d="m21 21-4.35-4.35"/>
+                    </svg>
+                  </button>
+                </div>
+                
+                {searchResults.length > 0 && (
+                  <div className="search-results">
+                    {searchResults.map((result, idx) => (
+                      <div 
+                        key={idx}
+                        className="search-result-item"
+                        onClick={() => selectSearchResult(result)}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                          <circle cx="12" cy="10" r="3"/>
+                        </svg>
+                        <span>{result.display_name}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          
           <div ref={mapContainer} className="map-container">
             {/* OSM Layers Legend */}
             {activeLayers.length > 0 && (

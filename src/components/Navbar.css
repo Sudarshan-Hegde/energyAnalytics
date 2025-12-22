@@ -83,6 +83,103 @@
   gap: 16px;
 }
 
+.iso-selector {
+  position: relative;
+}
+
+.iso-dropdown {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.iso-dropdown:hover {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+.iso-dropdown svg:first-child {
+  color: #10b981;
+}
+
+.iso-dropdown span {
+  color: #f8fafc;
+  font-weight: 600;
+  font-size: 14px;
+  min-width: 70px;
+}
+
+.iso-dropdown svg:last-child {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.iso-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 280px;
+  background: rgba(15, 23, 42, 0.98);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(20px);
+  z-index: 9999;
+  overflow: hidden;
+}
+
+.iso-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.iso-option:last-child {
+  border-bottom: none;
+}
+
+.iso-option:hover {
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.iso-option.active {
+  background: rgba(16, 185, 129, 0.15);
+  border-left: 3px solid #10b981;
+}
+
+.iso-option input[type=\"radio\"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.iso-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.iso-name {
+  color: #f8fafc;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.iso-full-name {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+}
+
 .user-info {
   display: flex;
   align-items: center;
