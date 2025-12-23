@@ -16,8 +16,10 @@ const Maps = ({ selectedISO }) => {
   const [selectedHeatmap, setSelectedHeatmap] = useState('');
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(280);
   const [detailPanelWidth, setDetailPanelWidth] = useState(380);
+  const [rightPanelWidth, setRightPanelWidth] = useState(400);
   const [isResizingLeft, setIsResizingLeft] = useState(false);
   const [isResizingDetail, setIsResizingDetail] = useState(false);
+  const [isResizingRight, setIsResizingRight] = useState(false);
   
   // Fetch real grid infrastructure data
   const { 
@@ -98,7 +100,9 @@ const Maps = ({ selectedISO }) => {
     overpassTransformers: false,
     overpassTowers: false,
     overpassGenerators: false,
-    overpassCables: false
+    overpassCables: false,
+    futureSubstationUpgrades: false,
+    futureTransmissionUpgrades: false
   });
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [detailPanelOpen, setDetailPanelOpen] = useState(true);
@@ -111,7 +115,8 @@ const Maps = ({ selectedISO }) => {
     loads: false,
     transformers: false,
     overpass: false,
-    heatmaps: false
+    heatmaps: false,
+    futureOutlook: false
   });
   
   // Remove database management state - moved to Navbar
@@ -122,6 +127,100 @@ const Maps = ({ selectedISO }) => {
   const loadedBoundsRef = useRef({});
   const loadingLayersRef = useRef({});
   const visibleLayersRef = useRef(visibleLayers);
+  
+  // Future Outlook data states
+  const [futureSubstationUpgrades, setFutureSubstationUpgrades] = useState([]);
+  const [futureTransmissionUpgrades, setFutureTransmissionUpgrades] = useState([]);
+  const [futureOutlookLoading, setFutureOutlookLoading] = useState(false);
+  
+  // Constraint View states
+  const [activeRightTab, setActiveRightTab] = useState('constraints'); // 'constraints' or 'dashboard'
+  const [scenarios, setScenarios] = useState([]);
+  const [selectedScenarios, setSelectedScenarios] = useState([]);
+  const [constraintType, setConstraintType] = useState('both');
+  const [busSearch, setBusSearch] = useState('');
+  const [constraints, setConstraints] = useState([]);
+  const [constraintsLoading, setConstraintsLoading] = useState(false);
+  const [showConstraintModal, setShowConstraintModal] = useState(false);
+  const [showDashboardModal, setShowDashboardModal] = useState(false);
+  
+  // Fetch Future Outlook data when map loads
+  useEffect(() => {
+    const fetchFutureOutlookData = async () => {
+      setFutureOutlookLoading(true);
+      try {
+        // Fetch substation upgrades
+        const substationRes = await fetch('http://localhost:8000/grid-data/future-outlook/substation-upgrades');
+        const substationData = await substationRes.json();
+        if (substationData.success) {
+          setFutureSubstationUpgrades(substationData.data);
+        }
+        
+        // Fetch transmission upgrades
+        const transmissionRes = await fetch('http://localhost:8000/grid-data/future-outlook/transmission-upgrades');
+        const transmissionData = await transmissionRes.json();
+        if (transmissionData.success) {
+          setFutureTransmissionUpgrades(transmissionData.data);
+        }
+        
+        console.log('✅ Future Outlook data loaded:', {
+          substations: substationData.data?.length || 0,
+          transmissions: transmissionData.data?.length || 0
+        });
+      } catch (error) {
+        console.error('❌ Error loading Future Outlook data:', error);
+      } finally {
+        setFutureOutlookLoading(false);
+      }
+    };
+    
+    fetchFutureOutlookData();
+  }, []);
+  
+  // Fetch available scenarios
+  useEffect(() => {
+    const fetchScenarios = async () => {
+      try {
+        const res = await fetch('http://localhost:8000/grid-data/scenarios');
+        const data = await res.json();
+        if (data.success) {
+          setScenarios(data.data);
+        }
+      } catch (error) {
+        console.error('Error fetching scenarios:', error);
+      }
+    };
+    fetchScenarios();
+  }, []);
+  
+  // Fetch constraints when selections change
+  useEffect(() => {
+    if (selectedScenarios.length === 0) {
+      setConstraints([]);
+      return;
+    }
+    
+    const fetchConstraints = async () => {
+      setConstraintsLoading(true);
+      try {
+        const params = new URLSearchParams();
+        selectedScenarios.forEach(s => params.append('scenarios[]', s));
+        params.append('type', constraintType);
+        if (busSearch) params.append('search', busSearch);
+        
+        const res = await fetch(`http://localhost:8000/grid-data/constraints?${params}`);
+        const data = await res.json();
+        if (data.success) {
+          setConstraints(data.data);
+        }
+      } catch (error) {
+        console.error('Error fetching constraints:', error);
+      }
+      setConstraintsLoading(false);
+    };
+    
+    fetchConstraints();
+  }, [selectedScenarios, constraintType, busSearch]);
   
   // Keep ref in sync with state
   useEffect(() => {
@@ -286,6 +385,22 @@ const Maps = ({ selectedISO }) => {
   useEffect(() => {
     if (map.current) return; // Initialize map only once
 
+    // CRITICAL: Use window.onerror to intercept and suppress errors BEFORE they break execution
+    // This is the ONLY way to prevent MapLibre's internal queryRenderedFeatures crashes from breaking clicks
+    const originalOnError = window.onerror;
+    window.onerror = function(message, source, lineno, colno, error) {
+      if (message && (message.includes('unknown feature value') || message.includes('Uncaught Error: unknown feature value'))) {
+        console.warn('⚠️ Suppressed OSM tile error (prevents click breaking):', message);
+        return true; // TRUE = suppress error completely, prevent default handling
+      }
+      // Pass other errors to original handler
+      if (originalOnError) {
+        return originalOnError.apply(this, arguments);
+      }
+      return false; // FALSE = allow error to propagate normally
+    };
+    console.log('✅ Installed window.onerror handler to intercept OSM tile crashes');
+
     // Define initialization function that checks container and dimensions
     const initializeMap = () => {
       if (!mapContainer.current) {
@@ -316,7 +431,23 @@ const Maps = ({ selectedISO }) => {
           maxPitch: 85
         });
 
-      // Add navigation controls back
+      // CRITICAL FIX: Patch queryRenderedFeatures to catch OSM tile errors INSIDE the method
+      // This prevents errors from breaking the click event chain
+      const originalQueryRenderedFeatures = map.current.queryRenderedFeatures.bind(map.current);
+      map.current.queryRenderedFeatures = function(...args) {
+        try {
+          return originalQueryRenderedFeatures(...args);
+        } catch (error) {
+          if (error.message && error.message.includes('unknown feature value')) {
+            console.warn('⚠️ Caught OSM tile error inside queryRenderedFeatures (returning empty array)');
+            return []; // Return empty array instead of crashing
+          }
+          throw error; // Re-throw other errors
+        }
+      };
+      console.log('✅ Patched map.queryRenderedFeatures to handle OSM tile errors');
+
+      // Add navigation controls
       map.current.addControl(new maplibregl.NavigationControl(), 'top-right');
       map.current.addControl(new maplibregl.FullscreenControl(), 'top-right');
       
@@ -389,11 +520,17 @@ const Maps = ({ selectedISO }) => {
     if (buses.length > 0 || branches.length > 0 || generators.length > 0) {
       // Get unique voltage levels from buses
       const voltages = [...new Set(buses.map(b => b.nominal_voltage).filter(v => v))].sort((a, b) => b - a);
-      const voltageRanges = voltages.map(v => ({
+      const voltageRanges = voltages.length > 0 ? voltages.map(v => ({
         label: `${v} kV`,
         value: v,
         count: buses.filter(b => b.nominal_voltage === v).length
-      }));
+      })) : [
+        // Default voltage levels if no data available
+        { label: '345 kV', value: 345, count: 0 },
+        { label: '230 kV', value: 230, count: 0 },
+        { label: '115 kV', value: 115, count: 0 },
+        { label: '69 kV', value: 69, count: 0 }
+      ];
       
       // Get capacity ranges from generators
       const capacities = generators.map(g => g.max_capacity).filter(c => c);
@@ -426,6 +563,19 @@ const Maps = ({ selectedISO }) => {
         statuses: statusOptions,
         regions: regionOptions
       });
+    } else {
+      // Set default filters when no data is available
+      setFilters({
+        voltageRanges: [
+          { label: '345 kV', value: 345, count: 0 },
+          { label: '230 kV', value: 230, count: 0 },
+          { label: '115 kV', value: 115, count: 0 },
+          { label: '69 kV', value: 69, count: 0 }
+        ],
+        capacityRanges: [],
+        statuses: [],
+        regions: []
+      });
     }
   }, [buses, branches, generators]);
 
@@ -433,7 +583,8 @@ const Maps = ({ selectedISO }) => {
   useEffect(() => {
     if (!map.current || !mapLoaded || dataLoading || busesGeoJSON.features.length === 0) return;
 
-    console.log(`Loading ${busesGeoJSON.features.length} buses, ${branchesGeoJSON.features.length} branches`);
+    console.log(`🔵 Loading ${busesGeoJSON.features.length} buses, ${branchesGeoJSON.features.length} branches`);
+    console.log('🔍 First bus sample:', busesGeoJSON.features[0]);
 
     // Add buses source and layers
     if (!map.current.getSource('real-buses-source')) {
@@ -442,7 +593,8 @@ const Maps = ({ selectedISO }) => {
         data: busesGeoJSON,
         cluster: true,
         clusterMaxZoom: 10,
-        clusterRadius: 50
+        clusterRadius: 50,
+        generateId: true // Enable feature state for interactivity
       });
 
       // Clustered circles layer
@@ -493,6 +645,7 @@ const Maps = ({ selectedISO }) => {
       });
 
       // Individual bus points - color coded by voltage
+      // Place as the last layer to ensure it's always on top and clickable
       map.current.addLayer({
         id: 'real-buses-points',
         type: 'circle',
@@ -515,15 +668,18 @@ const Maps = ({ selectedISO }) => {
             'interpolate',
             ['linear'],
             ['zoom'],
-            8, 4,
-            12, 8,
-            16, 12
+            4, 8,
+            8, 12,
+            12, 16,
+            16, 20
           ],
-          'circle-stroke-width': 2,
+          'circle-stroke-width': 3,
           'circle-stroke-color': '#ffffff',
-          'circle-opacity': 0.9
+          'circle-opacity': 1.0,
+          'circle-stroke-opacity': 1.0,
+          'circle-pitch-alignment': 'map' // Ensure circles stay aligned with map
         }
-      });
+      }); // Add as last layer (no beforeId) to ensure it's on top
 
       // Bus labels at higher zoom
       map.current.addLayer({
@@ -546,60 +702,93 @@ const Maps = ({ selectedISO }) => {
         }
       });
 
-      // Add click handler for bus selection
-      map.current.on('click', 'real-buses-points', (e) => {
-        console.log('Bus clicked!', e.features);
-        if (e.features.length > 0) {
-          const feature = e.features[0];
-          const props = feature.properties;
+      // CRITICAL: Move bus layers to absolute top to ensure they're clickable above all raster layers
+      // This is necessary because OSM raster layers can block pointer events
+      try {
+        if (map.current.getLayer('real-buses-clusters')) {
+          map.current.moveLayer('real-buses-clusters');
+        }
+        if (map.current.getLayer('real-buses-cluster-count')) {
+          map.current.moveLayer('real-buses-cluster-count');
+        }
+        if (map.current.getLayer('real-buses-points')) {
+          map.current.moveLayer('real-buses-points');
+        }
+        if (map.current.getLayer('real-buses-labels')) {
+          map.current.moveLayer('real-buses-labels');
+        }
+        console.log('✅ Bus layers moved to top for clickability');
+      } catch (err) {
+        console.warn('Could not move layers:', err);
+      }
+
+      console.log('🔧 Attaching DIRECT click handler to real-buses-points layer...');
+
+      // Set cursor to pointer globally over the map (avoid hover queries that crash)
+      map.current.getCanvas().style.cursor = 'pointer';
+
+      // NUCLEAR OPTION: Bypass MapLibre's broken internal feature detection
+      // Attach to canvas click event BEFORE MapLibre processes it
+      map.current.on('click', (e) => {
+        console.log('🎯 RAW map click detected at', e.lngLat);
+        
+        // Manually check if click is near any substation
+        if (busesGeoJSON?.features && busesGeoJSON.features.length > 0) {
+          // Convert click position to screen coordinates
+          const clickPixel = map.current.project(e.lngLat);
           
-          console.log('Bus data:', props);
+          // Click tolerance in pixels (larger = easier to click)
+          const pixelTolerance = 30;
           
-          const substationData = {
-            id: props.id,
-            name: props.name,
-            voltage: props.voltage,
-            county: props.county,
-            state: props.state,
-            shortCircuit: props.shortCircuit,
-            lmp2022: props.lmp2022,
-            lmp2023: props.lmp2023,
-            lmp2024: props.lmp2024,
-            lmp2025: props.lmp2025,
-            coordinates: e.lngLat
-          };
+          console.log(`🔍 Checking ${busesGeoJSON.features.length} substations (tolerance: ${pixelTolerance}px)`);
           
-          // Use multi-select handler
-          handleSubstationClick(substationData);
+          // Find closest substation within pixel tolerance
+          let closestFeature = null;
+          let closestPixelDistance = Infinity;
+          
+          busesGeoJSON.features.forEach((feature) => {
+            const [lng, lat] = feature.geometry.coordinates;
+            
+            // Convert substation coordinates to screen pixels
+            const featurePixel = map.current.project([lng, lat]);
+            
+            // Calculate pixel distance
+            const pixelDistance = Math.sqrt(
+              Math.pow(featurePixel.x - clickPixel.x, 2) + 
+              Math.pow(featurePixel.y - clickPixel.y, 2)
+            );
+            
+            if (pixelDistance < pixelTolerance && pixelDistance < closestPixelDistance) {
+              closestPixelDistance = pixelDistance;
+              closestFeature = feature;
+            }
+          });
+          
+          if (closestFeature) {
+            const props = closestFeature.properties;
+            console.log(`✅ Substation clicked (manual detection)! Distance: ${closestPixelDistance.toFixed(1)}px`, props);
+            
+            const substationData = {
+              id: props.id,
+              name: props.name,
+              voltage: props.voltage,
+              county: props.county,
+              state: props.state,
+              shortCircuit: props.shortCircuit,
+              lmp2022: props.lmp2022,
+              lmp2023: props.lmp2023,
+              lmp2024: props.lmp2024,
+              lmp2025: props.lmp2025,
+              coordinates: e.lngLat
+            };
+            
+            handleSubstationClick(substationData);
+          } else {
+            console.log(`❌ No substation found within ${pixelTolerance}px of click`);
+          }
         }
       });
-
-      // Change cursor on hover
-      map.current.on('mouseenter', 'real-buses-points', () => {
-        map.current.getCanvas().style.cursor = 'pointer';
-      });
-      
-      map.current.on('mouseleave', 'real-buses-points', () => {
-        map.current.getCanvas().style.cursor = '';
-      });
-
-      // Handle cluster clicks
-      map.current.on('click', 'real-buses-clusters', (e) => {
-        const features = map.current.queryRenderedFeatures(e.point, {
-          layers: ['real-buses-clusters']
-        });
-        const clusterId = features[0].properties.cluster_id;
-        map.current.getSource('real-buses-source').getClusterExpansionZoom(
-          clusterId,
-          (err, zoom) => {
-            if (err) return;
-            map.current.easeTo({
-              center: features[0].geometry.coordinates,
-              zoom: zoom
-            });
-          }
-        );
-      });
+      console.log('✅ MANUAL click detection enabled - BYPASSING MapLibre feature detection!');
     }
 
     // Add branches (transmission lines) source and layer
@@ -809,13 +998,21 @@ const Maps = ({ selectedISO }) => {
 
   // Handle substation click
   const handleSubstationClick = (substationData) => {
+    console.log('🎯 handleSubstationClick called with:', {
+      id: substationData.id,
+      name: substationData.name,
+      coordinates: substationData.coordinates
+    });
+    
     setSelectedSubstations(prev => {
       const exists = prev.find(s => s.id === substationData.id);
       if (exists) {
         // Remove if already selected
+        console.log('🔴 Deselecting substation:', substationData.name);
         return prev.filter(s => s.id !== substationData.id);
       } else {
         // Add to selection
+        console.log('🔴 Selecting substation:', substationData.name);
         return [...prev, substationData];
       }
     });
@@ -823,6 +1020,108 @@ const Maps = ({ selectedISO }) => {
     // Always open detail panel when clicking a substation
     setDetailPanelOpen(true);
   };
+
+  // Update selection indicator layer when selectedSubstations changes
+  useEffect(() => {
+    if (!map.current || !mapLoaded) {
+      console.log('⚠️ Map not ready for selection indicators');
+      return;
+    }
+
+    console.log('🔄 Selection changed. Total selected:', selectedSubstations.length);
+    selectedSubstations.forEach(sub => {
+      console.log('  📍', sub.name, '- coords:', sub.coordinates);
+    });
+
+    // Create GeoJSON for selected substations
+    const features = selectedSubstations.map(sub => {
+      let lng, lat;
+      
+      // Extract coordinates from various formats
+      if (sub.coordinates) {
+        // From MapLibre click event (LngLat object)
+        lng = sub.coordinates.lng;
+        lat = sub.coordinates.lat;
+      } else if (sub.longitude !== undefined && sub.latitude !== undefined) {
+        // From bus data directly
+        lng = parseFloat(sub.longitude);
+        lat = parseFloat(sub.latitude);
+      } else {
+        console.warn('⚠️ No coordinates found for:', sub.name);
+        return null;
+      }
+
+      console.log('  ✓ Creating feature for', sub.name, 'at', [lng, lat]);
+      
+      return {
+        type: 'Feature',
+        geometry: {
+          type: 'Point',
+          coordinates: [lng, lat]
+        },
+        properties: {
+          id: sub.id,
+          name: sub.name
+        }
+      };
+    }).filter(f => f !== null);
+
+    const selectionGeoJSON = {
+      type: 'FeatureCollection',
+      features: features
+    };
+
+    console.log('🔴 Updating selection indicators:', features.length, 'valid features');
+    console.log('   GeoJSON:', JSON.stringify(selectionGeoJSON, null, 2));
+
+    // Add or update source
+    if (!map.current.getSource('selection-indicator-source')) {
+      console.log('🆕 Creating selection-indicator-source');
+      map.current.addSource('selection-indicator-source', {
+        type: 'geojson',
+        data: selectionGeoJSON
+      });
+    } else {
+      console.log('🔄 Updating selection-indicator-source data');
+      map.current.getSource('selection-indicator-source').setData(selectionGeoJSON);
+    }
+
+    // Add selection indicator layer if it doesn't exist
+    if (!map.current.getLayer('selection-indicator-layer')) {
+      console.log('🆕 Creating selection-indicator-layer');
+      map.current.addLayer({
+        id: 'selection-indicator-layer',
+        type: 'circle',
+        source: 'selection-indicator-source',
+        paint: {
+          'circle-radius': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            4, 16,   // At zoom 4, radius 16px (larger than bus point)
+            8, 22,   // At zoom 8, radius 22px
+            12, 28,  // At zoom 12, radius 28px
+            16, 34   // At zoom 16, radius 34px
+          ],
+          'circle-color': 'rgba(0, 0, 0, 0)', // Fully transparent fill
+          'circle-stroke-color': '#ff0000',
+          'circle-stroke-width': 4,
+          'circle-stroke-opacity': 1.0
+        }
+      });
+      console.log('✅ Created selection indicator layer');
+      
+      // Move to top to ensure visibility
+      try {
+        map.current.moveLayer('selection-indicator-layer');
+        console.log('✅ Moved selection layer to top');
+      } catch (err) {
+        console.warn('Could not move selection layer:', err);
+      }
+    } else {
+      console.log('✓ Selection layer already exists, data updated');
+    }
+  }, [selectedSubstations, mapLoaded]);
 
   const handleHeatmapChange = (scenario) => {
     setSelectedHeatmap(scenario);
@@ -938,32 +1237,178 @@ const Maps = ({ selectedISO }) => {
     console.log('Heat map applied:', season, scenarioType);
   };
 
+  // ============================================================================
+  // FUTURE OUTLOOK LAYERS - Render approved substation and transmission upgrades
+  // ============================================================================
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+    
+    // SUBSTATION UPGRADES - Show as purple diamond points
+    if (futureSubstationUpgrades.length > 0) {
+      const substationGeoJSON = {
+        type: 'FeatureCollection',
+        features: futureSubstationUpgrades.map((upgrade, idx) => ({
+          type: 'Feature',
+          geometry: {
+            type: 'Point',
+            coordinates: [upgrade.longitude, upgrade.latitude]
+          },
+          properties: {
+            id: idx,
+            name: upgrade.name,
+            year: upgrade.year,
+            category: upgrade.category
+          }
+        }))
+      };
+      
+      // Remove existing layer if present
+      if (map.current.getLayer('future-substation-upgrades')) {
+        map.current.removeLayer('future-substation-upgrades');
+      }
+      if (map.current.getSource('future-substations-source')) {
+        map.current.removeSource('future-substations-source');
+      }
+      
+      // Add source
+      map.current.addSource('future-substations-source', {
+        type: 'geojson',
+        data: substationGeoJSON
+      });
+      
+      // Add layer
+      map.current.addLayer({
+        id: 'future-substation-upgrades',
+        type: 'circle',
+        source: 'future-substations-source',
+        paint: {
+          'circle-radius': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            5, 4,
+            10, 8,
+            15, 12
+          ],
+          'circle-color': '#a855f7', // Purple color for future projects
+          'circle-opacity': 0.8,
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#7c3aed'
+        },
+        layout: {
+          'visibility': visibleLayers.futureSubstationUpgrades ? 'visible' : 'none'
+        }
+      });
+      
+      console.log(`✅ Added ${futureSubstationUpgrades.length} future substation upgrades`);
+    }
+    
+    // TRANSMISSION UPGRADES - Show as orange lines from -> to
+    if (futureTransmissionUpgrades.length > 0) {
+      const transmissionGeoJSON = {
+        type: 'FeatureCollection',
+        features: futureTransmissionUpgrades.map((upgrade, idx) => ({
+          type: 'Feature',
+          geometry: {
+            type: 'LineString',
+            coordinates: [
+              [upgrade.from_longitude, upgrade.from_latitude],
+              [upgrade.to_longitude, upgrade.to_latitude]
+            ]
+          },
+          properties: {
+            id: idx,
+            name: upgrade.name,
+            year: upgrade.year,
+            category: upgrade.category
+          }
+        }))
+      };
+      
+      // Remove existing layer if present
+      if (map.current.getLayer('future-transmission-upgrades')) {
+        map.current.removeLayer('future-transmission-upgrades');
+      }
+      if (map.current.getSource('future-transmissions-source')) {
+        map.current.removeSource('future-transmissions-source');
+      }
+      
+      // Add source
+      map.current.addSource('future-transmissions-source', {
+        type: 'geojson',
+        data: transmissionGeoJSON
+      });
+      
+      // Add layer
+      map.current.addLayer({
+        id: 'future-transmission-upgrades',
+        type: 'line',
+        source: 'future-transmissions-source',
+        paint: {
+          'line-color': '#f97316', // Orange color for future transmission lines
+          'line-width': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            5, 2,
+            10, 3,
+            15, 5
+          ],
+          'line-opacity': 0.7,
+          'line-dasharray': [2, 2] // Dashed line to show it's future/planned
+        },
+        layout: {
+          'visibility': visibleLayers.futureTransmissionUpgrades ? 'visible' : 'none',
+          'line-cap': 'round',
+          'line-join': 'round'
+        }
+      });
+      
+      console.log(`✅ Added ${futureTransmissionUpgrades.length} future transmission upgrades`);
+    }
+    
+  }, [futureSubstationUpgrades, futureTransmissionUpgrades, visibleLayers.futureSubstationUpgrades, visibleLayers.futureTransmissionUpgrades, mapLoaded]);
+  // ============================================================================
+  // END FUTURE OUTLOOK LAYERS
+  // ============================================================================
+
   // Sidebar resize handlers
   const startResizeLeft = () => setIsResizingLeft(true);
   const startResizeDetail = () => setIsResizingDetail(true);
+  const startResizeRight = () => setIsResizingRight(true);
   
   const stopResize = () => {
     setIsResizingLeft(false);
     setIsResizingDetail(false);
+    setIsResizingRight(false);
   };
   
   const handleMouseMove = (e) => {
     if (isResizingLeft) {
       const newWidth = e.clientX;
-      if (newWidth >= 200 && newWidth <= 500) {
+      if (newWidth >= 150 && newWidth <= 500) {
         setLeftSidebarWidth(newWidth);
       }
     }
     if (isResizingDetail) {
-      const newWidth = window.innerWidth - e.clientX;
-      if (newWidth >= 300 && newWidth <= 600) {
+      // Calculate from the left edge of the detail panel
+      // Account for left sidebar width
+      const leftSidebarActualWidth = leftSidebarOpen ? leftSidebarWidth : 0;
+      const newWidth = e.clientX - leftSidebarActualWidth;
+      if (newWidth >= 200 && newWidth <= 600) {
         setDetailPanelWidth(newWidth);
+      }
+    }
+    if (isResizingRight) {
+      const newWidth = window.innerWidth - e.clientX;
+      if (newWidth >= 200 && newWidth <= 700) {
+        setRightPanelWidth(newWidth);
       }
     }
   };
   
   useEffect(() => {
-    if (isResizingLeft || isResizingDetail) {
+    if (isResizingLeft || isResizingDetail || isResizingRight) {
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', stopResize);
       return () => {
@@ -971,7 +1416,17 @@ const Maps = ({ selectedISO }) => {
         document.removeEventListener('mouseup', stopResize);
       };
     }
-  }, [isResizingLeft, isResizingDetail]);
+  }, [isResizingLeft, isResizingDetail, isResizingRight]);
+
+  // Trigger map resize when sidebar dimensions change
+  useEffect(() => {
+    if (map.current && mapLoaded) {
+      // Use requestAnimationFrame to ensure DOM has updated
+      requestAnimationFrame(() => {
+        map.current.resize();
+      });
+    }
+  }, [leftSidebarWidth, detailPanelWidth, rightPanelWidth, leftSidebarOpen, detailPanelOpen, rightPanelOpen, mapLoaded]);
 
   const toggleLayer = (layerName) => {
     const newVisibility = !visibleLayers[layerName];
@@ -1477,6 +1932,22 @@ const Maps = ({ selectedISO }) => {
       [sectionName]: !prev[sectionName]
     }));
   };
+  
+  // Toggle scenario selection
+  const toggleScenario = (scenarioId) => {
+    setSelectedScenarios(prev => {
+      if (prev.includes(scenarioId)) {
+        return prev.filter(s => s !== scenarioId);
+      } else {
+        return [...prev, scenarioId];
+      }
+    });
+  };
+  
+  // Remove scenario tag
+  const removeScenario = (scenarioId) => {
+    setSelectedScenarios(prev => prev.filter(s => s !== scenarioId));
+  };
 
   // Show loading state while data is being fetched
   if (dataLoading) {
@@ -1508,12 +1979,18 @@ const Maps = ({ selectedISO }) => {
 
       {/* Left Sidebar - Layers */}
       <div className={`left-sidebar ${leftSidebarOpen ? 'open' : 'closed'} ${isResizingLeft ? 'resizing' : ''}`} style={{ width: leftSidebarOpen ? `${leftSidebarWidth}px` : '0' }}>
-        <button className="sidebar-notch-right" onClick={() => setLeftSidebarOpen(!leftSidebarOpen)}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polyline points={leftSidebarOpen ? "15 18 9 12 15 6" : "9 18 15 12 9 6"}/>
-          </svg>
-        </button>
-        <div className="sidebar-header">
+        {leftSidebarOpen && (
+          <>
+            <div 
+              className="resize-handle resize-handle-right" 
+              onMouseDown={startResizeLeft}
+            />
+            <button className="sidebar-notch-right" onClick={() => setLeftSidebarOpen(!leftSidebarOpen)}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="15 18 9 12 15 6"/>
+              </svg>
+            </button>
+            <div className="sidebar-header">
           <button className="sidebar-toggle" onClick={() => setLeftSidebarOpen(!leftSidebarOpen)}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <rect x="3" y="3" width="18" height="18" rx="2"/>
@@ -1692,6 +2169,45 @@ const Maps = ({ selectedISO }) => {
             )}
           </div>
 
+          {/* Future Outlook Section */}
+          <div className="layer-section">
+            <div className="section-header" onClick={() => toggleSection('futureOutlook')}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points={expandedSections.futureOutlook ? "6 9 12 15 18 9" : "9 18 15 12 9 6"}/>
+              </svg>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+              </svg>
+              <span>Future Outlook</span>
+            </div>
+            {expandedSections.futureOutlook && (
+              <div className="section-items">
+                <div className="layer-item">
+                  <input 
+                    type="checkbox" 
+                    id="future-substation-upgrades"
+                    checked={visibleLayers.futureSubstationUpgrades}
+                    onChange={() => toggleLayer('futureSubstationUpgrades')}
+                  />
+                  <label htmlFor="future-substation-upgrades">
+                    ISO-NE Approved Substation Upgrades
+                  </label>
+                </div>
+                <div className="layer-item">
+                  <input 
+                    type="checkbox" 
+                    id="future-transmission-upgrades"
+                    checked={visibleLayers.futureTransmissionUpgrades}
+                    onChange={() => toggleLayer('futureTransmissionUpgrades')}
+                  />
+                  <label htmlFor="future-transmission-upgrades">
+                    ISO-NE Approved Transmission Upgrades
+                  </label>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* OpenStreetMap Overpass Section */}
           <div className="layer-section">
             <div className="section-header" onClick={() => toggleSection('overpass')}>
@@ -1793,11 +2309,14 @@ const Maps = ({ selectedISO }) => {
             )}
           </div>
         </div>
-        {leftSidebarOpen && (
-          <div 
-            className="resize-handle resize-handle-right" 
-            onMouseDown={startResizeLeft}
-          />
+          </>
+        )}
+        {!leftSidebarOpen && (
+          <button className="sidebar-notch-right" onClick={() => setLeftSidebarOpen(!leftSidebarOpen)}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="9 18 15 12 9 6"/>
+            </svg>
+          </button>
         )}
       </div>
 
@@ -1933,16 +2452,25 @@ const Maps = ({ selectedISO }) => {
       {/* Center Detail Panel */}
       <div className={`center-detail-panel ${detailPanelOpen ? 'open' : 'closed'} ${isResizingDetail ? 'resizing' : ''}`} style={{ width: detailPanelOpen ? `${detailPanelWidth}px` : '0' }}>
         {detailPanelOpen && (
-          <div 
-            className="resize-handle resize-handle-left" 
-            onMouseDown={startResizeDetail}
-          />
+          <>
+            <div 
+              className="resize-handle resize-handle-left" 
+              onMouseDown={startResizeDetail}
+            />
+            <button className="sidebar-notch-right" onClick={() => setDetailPanelOpen(!detailPanelOpen)}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="15 18 9 12 15 6"/>
+              </svg>
+            </button>
+          </>
         )}
-        <button className="sidebar-notch-right" onClick={() => setDetailPanelOpen(!detailPanelOpen)}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polyline points={detailPanelOpen ? "15 18 9 12 15 6" : "9 18 15 12 9 6"}/>
-          </svg>
-        </button>
+        {!detailPanelOpen && (
+          <button className="sidebar-notch-right" onClick={() => setDetailPanelOpen(!detailPanelOpen)}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="9 18 15 12 9 6"/>
+            </svg>
+          </button>
+        )}
         <div className="detail-panel-header">
           <button className="detail-toggle-btn" onClick={() => setDetailPanelOpen(!detailPanelOpen)}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -2443,95 +2971,872 @@ const Maps = ({ selectedISO }) => {
       </div>
 
       {/* Right Data Table Panel */}
-      <div className={`right-data-panel ${rightPanelOpen ? 'open' : 'closed'}`}>
-        <button className="sidebar-notch-left" onClick={() => setRightPanelOpen(!rightPanelOpen)}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polyline points={rightPanelOpen ? "9 18 15 12 9 6" : "15 18 9 12 15 6"}/>
-          </svg>
-        </button>
-        <div className="data-panel-header">
-          <button className="panel-toggle-btn" onClick={() => setRightPanelOpen(!rightPanelOpen)}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polyline points={rightPanelOpen ? "15 18 9 12 15 6" : "9 18 15 12 9 6"}/>
+      <div className={`right-data-panel ${rightPanelOpen ? 'open' : 'closed'} ${isResizingRight ? 'resizing' : ''}`} style={{ width: rightPanelOpen ? `${rightPanelWidth}px` : '0' }}>
+        {rightPanelOpen && (
+          <>
+            <div 
+              className="resize-handle resize-handle-left" 
+              onMouseDown={startResizeRight}
+            />
+            <button className="sidebar-notch-left" onClick={() => setRightPanelOpen(!rightPanelOpen)}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="9 18 15 12 9 6"/>
+              </svg>
+            </button>
+            <div className="data-panel-header">
+              <button className="panel-toggle-btn" onClick={() => setRightPanelOpen(!rightPanelOpen)}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="9 18 15 12 9 6"/>
+                </svg>
+              </button>
+              <span className="panel-title">Constraint View & Bus Dashboard</span>
+            </div>
+            
+            {/* Tabs */}
+            <div className="data-panel-tabs">
+              <button 
+                className={`data-tab ${activeRightTab === 'constraints' ? 'active' : ''}`}
+                onClick={() => setActiveRightTab('constraints')}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z"/>
+                </svg>
+                Constraints
+              </button>
+              <button 
+                className={`data-tab ${activeRightTab === 'dashboard' ? 'active' : ''}`}
+                onClick={() => setActiveRightTab('dashboard')}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M3 13l4-4 4 4 10-10"/>
+                  <path d="M21 3v6h-6"/>
+                </svg>
+                Bus Dashboard
+              </button>
+            </div>
+            
+            {/* Constraints Tab Content */}
+            {activeRightTab === 'constraints' && (
+              <div className="data-panel-content">
+                <div className="constraints-filters">
+                  {/* Scenario Selection */}
+                  <div className="filter-group">
+                    <label className="filter-label">Scenario(s)</label>
+                    <div className="selected-scenarios">
+                      {selectedScenarios.map(scenarioId => {
+                        const scenario = scenarios.find(s => s.id === scenarioId);
+                        return (
+                          <span key={scenarioId} className="scenario-tag">
+                            {scenario?.name || scenarioId}
+                            <button onClick={() => removeScenario(scenarioId)} className="tag-remove">×</button>
+                          </span>
+                        );
+                      })}
+                    </div>
+                    <details className="scenario-dropdown">
+                      <summary className="dropdown-trigger">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <circle cx="12" cy="12" r="10"/>
+                          <line x1="12" y1="8" x2="12" y2="16"/>
+                          <line x1="8" y1="12" x2="16" y2="12"/>
+                        </svg>
+                        Select Scenarios
+                      </summary>
+                      <div className="dropdown-content">
+                        {scenarios.map(scenario => (
+                          <label key={scenario.id} className="dropdown-item">
+                            <input
+                              type="checkbox"
+                              checked={selectedScenarios.includes(scenario.id)}
+                              onChange={() => toggleScenario(scenario.id)}
+                            />
+                            <span>{scenario.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </details>
+                  </div>
+                  
+                  {/* Constraint Type */}
+                  <div className="filter-group">
+                    <label className="filter-label">Constraint type</label>
+                    <div className="radio-group">
+                      <label className="radio-label">
+                        <input 
+                          type="radio" 
+                          name="constraintType" 
+                          value="both" 
+                          checked={constraintType === 'both'}
+                          onChange={(e) => setConstraintType(e.target.value)}
+                        />
+                        <span>Both</span>
+                      </label>
+                      <label className="radio-label">
+                        <input 
+                          type="radio" 
+                          name="constraintType" 
+                          value="substation" 
+                          checked={constraintType === 'substation'}
+                          onChange={(e) => setConstraintType(e.target.value)}
+                        />
+                        <span>Substation</span>
+                      </label>
+                      <label className="radio-label">
+                        <input 
+                          type="radio" 
+                          name="constraintType" 
+                          value="branch" 
+                          checked={constraintType === 'branch'}
+                          onChange={(e) => setConstraintType(e.target.value)}
+                        />
+                        <span>Branch</span>
+                      </label>
+                    </div>
+                  </div>
+                  
+                  {/* Bus Search */}
+                  <div className="filter-group">
+                    <label className="filter-label">Search (bus/line/contingency/facility)</label>
+                    <input
+                      type="text"
+                      className="search-input"
+                      placeholder="e.g., Mystic, 115 kV, Line 1234, SLL"
+                      value={busSearch}
+                      onChange={(e) => setBusSearch(e.target.value)}
+                    />
+                  </div>
+                  
+                  {/* Row Count & Expand Button */}
+                  <div className="constraints-toolbar">
+                    <span className="row-count">
+                      {constraints.length} constraint rows across selected buses/lines.
+                    </span>
+                    <button 
+                      className="expand-btn"
+                      onClick={() => setShowConstraintModal(true)}
+                      disabled={constraints.length === 0}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
+                      </svg>
+                      Expand
+                    </button>
+                  </div>
+                </div>
+                
+                {/* Constraints Table */}
+                <div className="constraints-table-container">
+                  {constraintsLoading ? (
+                    <div className="loading-indicator">Loading constraints...</div>
+                  ) : constraints.length === 0 ? (
+                    <div className="empty-state">
+                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="1.5">
+                        <path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z"/>
+                      </svg>
+                      <p>Select scenarios above to view constraints</p>
+                    </div>
+                  ) : (
+                    <table className="constraints-table">
+                      <thead>
+                        <tr>
+                          <th>Source</th>
+                          <th>Sink</th>
+                          <th>Scenario</th>
+                          <th>Max Power (MW)</th>
+                          <th>Monitored Facility</th>
+                          <th>Power (MW)</th>
+                          <th>Contingency</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {constraints.slice(0, 100).map((constraint, idx) => (
+                          <tr key={idx}>
+                            <td>{constraint.Source || '-'}</td>
+                            <td>{constraint.Sink || '-'}</td>
+                            <td><span className="scenario-badge">{constraint.scenario}</span></td>
+                            <td>{constraint['Maximum Power Withdrawal (MW)'] || '-'}</td>
+                            <td>{constraint['Monitored Facility'] || '-'}</td>
+                            <td>{constraint['Power Withdrawal (MW)'] || '-'}</td>
+                            <td>{constraint['Binding Contingency'] || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            )}
+            
+            {/* Bus Dashboard Tab Content */}
+            {activeRightTab === 'dashboard' && (
+              <div className="data-panel-content">
+                <div className="dashboard-header">
+                  <h3>Bus Performance Dashboard</h3>
+                  <button 
+                    className="expand-btn"
+                    onClick={() => setShowDashboardModal(true)}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
+                    </svg>
+                    Expand
+                  </button>
+                </div>
+                
+                <div className="dashboard-content">
+                  {/* LMP Statistics Card */}
+                  <div className="dashboard-card">
+                    <h4>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" style={{display: 'inline', marginRight: '8px'}}>
+                        <line x1="12" y1="1" x2="12" y2="23"/>
+                        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                      </svg>
+                      LMP Statistics ($/MWh)
+                    </h4>
+                    <div className="stat-grid">
+                      <div className="stat-item">
+                        <span className="stat-label">Avg LMP 2024</span>
+                        <span className="stat-value">$45.23</span>
+                      </div>
+                      <div className="stat-item">
+                        <span className="stat-label">Peak LMP</span>
+                        <span className="stat-value stat-danger">$127.50</span>
+                      </div>
+                      <div className="stat-item">
+                        <span className="stat-label">Min LMP</span>
+                        <span className="stat-value stat-success">$18.75</span>
+                      </div>
+                    </div>
+                    <div className="mini-chart">
+                      <div className="chart-title">LMP Trend (2024)</div>
+                      <svg viewBox="0 0 300 80" className="line-chart">
+                        <polyline
+                          fill="none"
+                          stroke="#3b82f6"
+                          strokeWidth="2"
+                          points="10,60 40,45 70,50 100,30 130,35 160,25 190,40 220,28 250,35 280,30"
+                        />
+                        <polyline
+                          fill="none"
+                          stroke="rgba(59, 130, 246, 0.2)"
+                          strokeWidth="1"
+                          strokeDasharray="4,4"
+                          points="10,45 280,45"
+                        />
+                      </svg>
+                      <div className="chart-labels">
+                        <span>Jan</span>
+                        <span>Apr</span>
+                        <span>Jul</span>
+                        <span>Oct</span>
+                        <span>Dec</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Voltage Distribution Card */}
+                  <div className="dashboard-card">
+                    <h4>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" style={{display: 'inline', marginRight: '8px'}}>
+                        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                      </svg>
+                      Voltage Levels Distribution
+                    </h4>
+                    <div className="bar-chart-container">
+                      <div className="bar-chart">
+                        <div className="bar-item">
+                          <div className="bar-fill" style={{height: '85%', background: '#10b981'}}></div>
+                          <span className="bar-label">115kV</span>
+                          <span className="bar-value">245</span>
+                        </div>
+                        <div className="bar-item">
+                          <div className="bar-fill" style={{height: '65%', background: '#3b82f6'}}></div>
+                          <span className="bar-label">138kV</span>
+                          <span className="bar-value">187</span>
+                        </div>
+                        <div className="bar-item">
+                          <div className="bar-fill" style={{height: '45%', background: '#6366f1'}}></div>
+                          <span className="bar-label">230kV</span>
+                          <span className="bar-value">128</span>
+                        </div>
+                        <div className="bar-item">
+                          <div className="bar-fill" style={{height: '30%', background: '#8b5cf6'}}></div>
+                          <span className="bar-label">345kV</span>
+                          <span className="bar-value">85</span>
+                        </div>
+                        <div className="bar-item">
+                          <div className="bar-fill" style={{height: '15%', background: '#a855f7'}}></div>
+                          <span className="bar-label">500kV</span>
+                          <span className="bar-value">42</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Constraint Violations Card */}
+                  <div className="dashboard-card">
+                    <h4>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" style={{display: 'inline', marginRight: '8px'}}>
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                        <line x1="12" y1="9" x2="12" y2="13"/>
+                        <line x1="12" y1="17" x2="12.01" y2="17"/>
+                      </svg>
+                      Constraint Types
+                    </h4>
+                    <div className="constraint-stats">
+                      <div className="constraint-row">
+                        <span className="constraint-label">Branch Charging</span>
+                        <div className="progress-bar">
+                          <div className="progress-fill" style={{width: '75%', background: '#ef4444'}}></div>
+                        </div>
+                        <span className="constraint-count">342</span>
+                      </div>
+                      <div className="constraint-row">
+                        <span className="constraint-label">Branch Discharging</span>
+                        <div className="progress-bar">
+                          <div className="progress-fill" style={{width: '68%', background: '#f59e0b'}}></div>
+                        </div>
+                        <span className="constraint-count">298</span>
+                      </div>
+                      <div className="constraint-row">
+                        <span className="constraint-label">Substation Charging</span>
+                        <div className="progress-bar">
+                          <div className="progress-fill" style={{width: '52%', background: '#3b82f6'}}></div>
+                        </div>
+                        <span className="constraint-count">224</span>
+                      </div>
+                      <div className="constraint-row">
+                        <span className="constraint-label">Substation Discharging</span>
+                        <div className="progress-bar">
+                          <div className="progress-fill" style={{width: '45%', background: '#10b981'}}></div>
+                        </div>
+                        <span className="constraint-count">187</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* System Overview Card */}
+                  <div className="dashboard-card">
+                    <h4>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2" style={{display: 'inline', marginRight: '8px'}}>
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M12 6v6l4 2"/>
+                      </svg>
+                      System Overview
+                    </h4>
+                    <div className="stat-grid-horizontal">
+                      <div className="stat-item-compact">
+                        <span className="stat-label-small">Total Buses</span>
+                        <span className="stat-value-large">{buses.length}</span>
+                      </div>
+                      <div className="stat-item-compact">
+                        <span className="stat-label-small">Total Branches</span>
+                        <span className="stat-value-large">{branches.length}</span>
+                      </div>
+                      <div className="stat-item-compact">
+                        <span className="stat-label-small">Total Generators</span>
+                        <span className="stat-value-large">{generators.length}</span>
+                      </div>
+                    </div>
+                    <div className="system-status">
+                      <div className="status-indicator status-operational">
+                        <span className="status-dot"></span>
+                        <span>System Operational</span>
+                      </div>
+                      <div className="status-detail">Last updated: {new Date().toLocaleTimeString()}</div>
+                    </div>
+                  </div>
+                  
+                  {/* Peak Load Analysis Card */}
+                  <div className="dashboard-card">
+                    <h4>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2" style={{display: 'inline', marginRight: '8px'}}>
+                        <path d="M18 20V10M12 20V4M6 20v-6"/>
+                      </svg>
+                      Peak vs Off-Peak Analysis
+                    </h4>
+                    <div className="comparison-chart">
+                      <div className="comparison-item">
+                        <div className="comparison-label">Summer Peak</div>
+                        <div className="comparison-bar-group">
+                          <div className="comparison-bar peak">
+                            <div className="comparison-fill" style={{width: '90%'}}></div>
+                            <span className="comparison-value">18,245 MW</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="comparison-item">
+                        <div className="comparison-label">Summer Off-Peak</div>
+                        <div className="comparison-bar-group">
+                          <div className="comparison-bar offpeak">
+                            <div className="comparison-fill" style={{width: '55%'}}></div>
+                            <span className="comparison-value">11,180 MW</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="comparison-item">
+                        <div className="comparison-label">Spring Light Load</div>
+                        <div className="comparison-bar-group">
+                          <div className="comparison-bar light">
+                            <div className="comparison-fill" style={{width: '40%'}}></div>
+                            <span className="comparison-value">8,125 MW</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+        {!rightPanelOpen && (
+          <button className="sidebar-notch-left" onClick={() => setRightPanelOpen(!rightPanelOpen)}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="15 18 9 12 15 6"/>
             </svg>
           </button>
-          <span className="panel-title">Data Analysis</span>
-        </div>
-        <div className="data-panel-tabs">
-          <button className="data-tab active">Binding Constraint Type (Substations)</button>
-          <button className="data-tab">Injection / Withdrawal Level</button>
-          <button className="data-tab">Binding Constraint Type (Branches)</button>
-        </div>
-        <div className="data-panel-content">
-          <div className="data-panel-filters">
-            <select className="data-filter-select">
-              <option>Summer Peak Substation Discharging</option>
-            </select>
-            <div className="data-filter-range">
-              <label>Range:</label>
-              <input type="number" defaultValue="1" className="range-input" />
-              <span>to</span>
-              <input type="number" defaultValue="500" className="range-input" />
+        )}
+      </div>
+      
+      {/* Constraint Modal */}
+      {showConstraintModal && (
+        <div className="fullscreen-modal" onClick={() => setShowConstraintModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Constraints - Full View</h2>
+              <button className="modal-close" onClick={() => setShowConstraintModal(false)}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="18" y1="6" x2="6" y2="18"/>
+                  <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+            
+            {/* Same filters as sidebar */}
+            <div className="modal-filters">
+              <div className="filter-group">
+                <label className="filter-label">Scenario(s)</label>
+                <div className="selected-scenarios">
+                  {selectedScenarios.map(scenarioId => {
+                    const scenario = scenarios.find(s => s.id === scenarioId);
+                    return (
+                      <span key={scenarioId} className="scenario-tag">
+                        {scenario?.name || scenarioId}
+                        <button onClick={() => removeScenario(scenarioId)} className="tag-remove">×</button>
+                      </span>
+                    );
+                  })}
+                </div>
+                <details className="scenario-dropdown">
+                  <summary className="dropdown-trigger">Select Scenarios</summary>
+                  <div className="dropdown-content">
+                    {scenarios.map(scenario => (
+                      <label key={scenario.id} className="dropdown-item">
+                        <input
+                          type="checkbox"
+                          checked={selectedScenarios.includes(scenario.id)}
+                          onChange={() => toggleScenario(scenario.id)}
+                        />
+                        <span>{scenario.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </details>
+              </div>
+              
+              <div className="filter-group">
+                <label className="filter-label">Constraint type</label>
+                <div className="radio-group">
+                  <label className="radio-label">
+                    <input type="radio" name="modalConstraintType" value="both" checked={constraintType === 'both'} onChange={(e) => setConstraintType(e.target.value)} />
+                    <span>Both</span>
+                  </label>
+                  <label className="radio-label">
+                    <input type="radio" name="modalConstraintType" value="substation" checked={constraintType === 'substation'} onChange={(e) => setConstraintType(e.target.value)} />
+                    <span>Substation</span>
+                  </label>
+                  <label className="radio-label">
+                    <input type="radio" name="modalConstraintType" value="branch" checked={constraintType === 'branch'} onChange={(e) => setConstraintType(e.target.value)} />
+                    <span>Branch</span>
+                  </label>
+                </div>
+              </div>
+              
+              <div className="filter-group">
+                <label className="filter-label">Search</label>
+                <input type="text" className="search-input" placeholder="e.g., Mystic, 115 kV, Line 1234" value={busSearch} onChange={(e) => setBusSearch(e.target.value)} />
+              </div>
+            </div>
+            
+            <div className="modal-body">
+              <div className="modal-table-info">
+                <span>{constraints.length} constraint rows</span>
+              </div>
+              <div className="modal-table-container">
+                {constraintsLoading ? (
+                  <div className="loading-indicator">Loading...</div>
+                ) : constraints.length === 0 ? (
+                  <div className="empty-state">Select scenarios to view constraints</div>
+                ) : (
+                  <table className="constraints-table-full">
+                    <thead>
+                      <tr>
+                        <th>Source</th>
+                        <th>Sink</th>
+                        <th>Scenario</th>
+                        <th>Max Power (MW)</th>
+                        <th>Monitored Facility</th>
+                        <th>From Bus #</th>
+                        <th>From Bus Name</th>
+                        <th>To Bus #</th>
+                        <th>To Bus Name</th>
+                        <th>Circuit</th>
+                        <th>Voltage (KV)</th>
+                        <th>Area</th>
+                        <th>Zone</th>
+                        <th>Power Withdrawal (MW)</th>
+                        <th>Distribution Factor</th>
+                        <th>Binding Contingency</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {constraints.map((constraint, idx) => (
+                        <tr key={idx}>
+                          <td>{constraint.Source || '-'}</td>
+                          <td>{constraint.Sink || '-'}</td>
+                          <td>{constraint.scenario}</td>
+                          <td>{constraint['Maximum Power Withdrawal (MW)'] || '-'}</td>
+                          <td>{constraint['Monitored Facility'] || '-'}</td>
+                          <td>{constraint['From Bus Number Monitored Facility'] || '-'}</td>
+                          <td>{constraint['From Bus Model Identifier Monitored Facility'] || '-'}</td>
+                          <td>{constraint['To Bus Number Monitored Facility'] || '-'}</td>
+                          <td>{constraint['To Bus Model Identifier Monitored Facility'] || '-'}</td>
+                          <td>{constraint.Circuit || '-'}</td>
+                          <td>{constraint['Voltage (KV) Monitored Facility'] || '-'}</td>
+                          <td>{constraint['Area Monitored Facility'] || '-'}</td>
+                          <td>{constraint['Zone Monitored Facility'] || '-'}</td>
+                          <td>{constraint['Power Withdrawal (MW)'] || '-'}</td>
+                          <td>{constraint['Distribution Factor (Dfax)'] || '-'}</td>
+                          <td>{constraint['Binding Contingency'] || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
             </div>
           </div>
-          <div className="data-table-container">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Source</th>
-                  <th>Common Name</th>
-                  <th>State</th>
-                  <th>Maximum Power Injection (MW)</th>
-                  <th>Monitored Facility</th>
-                  <th>Power Injection (MW)</th>
-                  <th>From Bus Name & #</th>
-                  <th>Source</th>
-                  <th>Common Name</th>
-                  <th>State</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Florida Pass</td>
-                  <td>Florida_Discharging_Sink</td>
-                  <td>200</td>
-                  <td>200</td>
-                  <td>Florida_Discharging_Sink</td>
-                  <td>76.5</td>
-                  <td>3071</td>
-                  <td></td>
-                  <td>8506-8502-1</td>
-                  <td>117h Ave East to 117h Ave St</td>
-                </tr>
-                <tr>
-                  <td>Indian Pass</td>
-                  <td>Florida_Discharging_Sink</td>
-                  <td>200</td>
-                  <td>200</td>
-                  <td>Florida_Discharging_Sink</td>
-                  <td>77.9</td>
-                  <td>3037681</td>
-                  <td></td>
-                  <td>8506-8502-1</td>
-                  <td>117h Ave East to 117h St</td>
-                </tr>
-                <tr>
-                  <td>Indian Pass</td>
-                  <td>Florida_Discharging_Sink</td>
-                  <td>200</td>
-                  <td>200</td>
-                  <td>Florida_Discharging_Sink</td>
-                  <td>63.5</td>
-                  <td>3619</td>
-                  <td></td>
-                  <td>Florida</td>
-                  <td>Florida_Discharging_Sink</td>
-                </tr>
-              </tbody>
-            </table>
+        </div>
+      )}
+      
+      {/* Bus Dashboard Modal */}
+      {showDashboardModal && (
+        <div className="fullscreen-modal" onClick={() => setShowDashboardModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Bus Dashboard - Full View</h2>
+              <button className="modal-close" onClick={() => setShowDashboardModal(false)}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="18" y1="6" x2="6" y2="18"/>
+                  <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="dashboard-grid-full">
+                {/* Large LMP Analysis Card */}
+                <div className="dashboard-card-large" style={{gridColumn: 'span 2'}}>
+                  <h3>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" style={{display: 'inline', marginRight: '8px', verticalAlign: 'middle'}}>
+                      <line x1="12" y1="1" x2="12" y2="23"/>
+                      <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                    </svg>
+                    Locational Marginal Pricing (LMP) Analysis
+                  </h3>
+                  <div className="stat-grid-horizontal" style={{marginBottom: '24px'}}>
+                    <div className="stat-item-compact">
+                      <span className="stat-label-small">Average LMP (2024)</span>
+                      <span className="stat-value-large">$45.23</span>
+                      <span className="stat-label-small" style={{color: '#10b981'}}>+5.2% vs 2023</span>
+                    </div>
+                    <div className="stat-item-compact">
+                      <span className="stat-label-small">Peak LMP</span>
+                      <span className="stat-value-large" style={{color: '#ef4444'}}>$127.50</span>
+                      <span className="stat-label-small">Aug 15, 2024 15:00</span>
+                    </div>
+                    <div className="stat-item-compact">
+                      <span className="stat-label-small">Min LMP</span>
+                      <span className="stat-value-large" style={{color: '#10b981'}}>$18.75</span>
+                      <span className="stat-label-small">Apr 3, 2024 03:00</span>
+                    </div>
+                    <div className="stat-item-compact">
+                      <span className="stat-label-small">Std Deviation</span>
+                      <span className="stat-value-large">$12.34</span>
+                      <span className="stat-label-small">Moderate Volatility</span>
+                    </div>
+                  </div>
+                  <div className="large-line-chart">
+                    <svg viewBox="0 0 800 200" style={{width: '100%', height: '200px'}}>
+                      {/* Grid lines */}
+                      <line x1="50" y1="20" x2="750" y2="20" stroke="#e2e8f0" strokeWidth="1"/>
+                      <line x1="50" y1="60" x2="750" y2="60" stroke="#e2e8f0" strokeWidth="1"/>
+                      <line x1="50" y1="100" x2="750" y2="100" stroke="#e2e8f0" strokeWidth="1"/>
+                      <line x1="50" y1="140" x2="750" y2="140" stroke="#e2e8f0" strokeWidth="1"/>
+                      <line x1="50" y1="180" x2="750" y2="180" stroke="#e2e8f0" strokeWidth="1"/>
+                      
+                      {/* Y-axis labels */}
+                      <text x="40" y="25" fontSize="10" fill="#64748b" textAnchor="end">$120</text>
+                      <text x="40" y="65" fontSize="10" fill="#64748b" textAnchor="end">$90</text>
+                      <text x="40" y="105" fontSize="10" fill="#64748b" textAnchor="end">$60</text>
+                      <text x="40" y="145" fontSize="10" fill="#64748b" textAnchor="end">$30</text>
+                      <text x="40" y="185" fontSize="10" fill="#64748b" textAnchor="end">$0</text>
+                      
+                      {/* LMP trend line - 2024 */}
+                      <polyline
+                        fill="none"
+                        stroke="#3b82f6"
+                        strokeWidth="3"
+                        points="50,140 110,135 170,125 230,90 290,95 350,85 410,100 470,80 530,95 590,88 650,92 710,85 750,80"
+                      />
+                      
+                      {/* LMP trend line - 2023 (comparison) */}
+                      <polyline
+                        fill="none"
+                        stroke="#94a3b8"
+                        strokeWidth="2"
+                        strokeDasharray="5,5"
+                        points="50,145 110,140 170,132 230,105 290,108 350,98 410,115 470,95 530,105 590,100 650,102 710,95 750,92"
+                      />
+                      
+                      {/* Area fill under 2024 line */}
+                      <polygon
+                        fill="rgba(59, 130, 246, 0.1)"
+                        points="50,180 50,140 110,135 170,125 230,90 290,95 350,85 410,100 470,80 530,95 590,88 650,92 710,85 750,80 750,180"
+                      />
+                    </svg>
+                    <div className="chart-labels" style={{paddingLeft: '50px', paddingRight: '50px'}}>
+                      <span>Jan</span>
+                      <span>Feb</span>
+                      <span>Mar</span>
+                      <span>Apr</span>
+                      <span>May</span>
+                      <span>Jun</span>
+                      <span>Jul</span>
+                      <span>Aug</span>
+                      <span>Sep</span>
+                      <span>Oct</span>
+                      <span>Nov</span>
+                      <span>Dec</span>
+                    </div>
+                    <div style={{display: 'flex', justifyContent: 'center', gap: '20px', marginTop: '12px', fontSize: '12px'}}>
+                      <span><span style={{display: 'inline-block', width: '20px', height: '3px', background: '#3b82f6', verticalAlign: 'middle'}}></span> 2024</span>
+                      <span><span style={{display: 'inline-block', width: '20px', height: '2px', background: '#94a3b8', verticalAlign: 'middle', borderTop: '2px dashed #94a3b8'}}></span> 2023</span>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Voltage Distribution Card */}
+                <div className="dashboard-card-large">
+                  <h3>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" style={{display: 'inline', marginRight: '8px', verticalAlign: 'middle'}}>
+                      <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                    </svg>
+                    Voltage Distribution by Class
+                  </h3>
+                  <div className="large-bar-chart">
+                    <svg viewBox="0 0 400 250" style={{width: '100%', height: '250px'}}>
+                      {/* Bars */}
+                      <rect x="40" y="35" width="60" height="170" fill="#10b981" rx="4"/>
+                      <rect x="120" y="70" width="60" height="135" fill="#3b82f6" rx="4"/>
+                      <rect x="200" y="110" width="60" height="95" fill="#6366f1" rx="4"/>
+                      <rect x="280" y="145" width="60" height="60" fill="#8b5cf6" rx="4"/>
+                      <rect x="360" y="175" width="60" height="30" fill="#a855f7" rx="4"/>
+                      
+                      {/* Values on bars */}
+                      <text x="70" y="25" fontSize="16" fill="#1e293b" fontWeight="700" textAnchor="middle">245</text>
+                      <text x="150" y="60" fontSize="16" fill="#1e293b" fontWeight="700" textAnchor="middle">187</text>
+                      <text x="230" y="100" fontSize="16" fill="#1e293b" fontWeight="700" textAnchor="middle">128</text>
+                      <text x="310" y="135" fontSize="16" fill="#1e293b" fontWeight="700" textAnchor="middle">85</text>
+                      <text x="390" y="165" fontSize="16" fill="#1e293b" fontWeight="700" textAnchor="middle">42</text>
+                      
+                      {/* Labels */}
+                      <text x="70" y="225" fontSize="14" fill="#64748b" fontWeight="600" textAnchor="middle">115kV</text>
+                      <text x="150" y="225" fontSize="14" fill="#64748b" fontWeight="600" textAnchor="middle">138kV</text>
+                      <text x="230" y="225" fontSize="14" fill="#64748b" fontWeight="600" textAnchor="middle">230kV</text>
+                      <text x="310" y="225" fontSize="14" fill="#64748b" fontWeight="600" textAnchor="middle">345kV</text>
+                      <text x="390" y="225" fontSize="14" fill="#64748b" fontWeight="600" textAnchor="middle">500kV</text>
+                      
+                      {/* Axis */}
+                      <line x1="20" y1="205" x2="440" y2="205" stroke="#64748b" strokeWidth="2"/>
+                    </svg>
+                    <div style={{textAlign: 'center', marginTop: '12px', fontSize: '12px', color: '#64748b'}}>
+                      Total Buses: {buses.length}
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Constraint Types Breakdown */}
+                <div className="dashboard-card-large">
+                  <h3>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" style={{display: 'inline', marginRight: '8px', verticalAlign: 'middle'}}>
+                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                      <line x1="12" y1="9" x2="12" y2="13"/>
+                      <line x1="12" y1="17" x2="12.01" y2="17"/>
+                    </svg>
+                    Constraint Types Distribution
+                  </h3>
+                  <div className="constraint-stats" style={{marginTop: '20px'}}>
+                    <div className="constraint-row" style={{padding: '12px 0'}}>
+                      <span className="constraint-label" style={{minWidth: '180px', fontSize: '13px'}}>Branch Charging</span>
+                      <div className="progress-bar" style={{height: '36px'}}>
+                        <div className="progress-fill" style={{width: '75%', background: '#ef4444'}}></div>
+                      </div>
+                      <span className="constraint-count" style={{fontSize: '16px', minWidth: '60px'}}>342</span>
+                    </div>
+                    <div className="constraint-row" style={{padding: '12px 0'}}>
+                      <span className="constraint-label" style={{minWidth: '180px', fontSize: '13px'}}>Branch Discharging</span>
+                      <div className="progress-bar" style={{height: '36px'}}>
+                        <div className="progress-fill" style={{width: '68%', background: '#f59e0b'}}></div>
+                      </div>
+                      <span className="constraint-count" style={{fontSize: '16px', minWidth: '60px'}}>298</span>
+                    </div>
+                    <div className="constraint-row" style={{padding: '12px 0'}}>
+                      <span className="constraint-label" style={{minWidth: '180px', fontSize: '13px'}}>Substation Charging</span>
+                      <div className="progress-bar" style={{height: '36px'}}>
+                        <div className="progress-fill" style={{width: '52%', background: '#3b82f6'}}></div>
+                      </div>
+                      <span className="constraint-count" style={{fontSize: '16px', minWidth: '60px'}}>224</span>
+                    </div>
+                    <div className="constraint-row" style={{padding: '12px 0'}}>
+                      <span className="constraint-label" style={{minWidth: '180px', fontSize: '13px'}}>Substation Discharging</span>
+                      <div className="progress-bar" style={{height: '36px'}}>
+                        <div className="progress-fill" style={{width: '45%', background: '#10b981'}}></div>
+                      </div>
+                      <span className="constraint-count" style={{fontSize: '16px', minWidth: '60px'}}>187</span>
+                    </div>
+                  </div>
+                  <div style={{marginTop: '24px', padding: '16px', background: '#f8fafc', borderRadius: '6px'}}>
+                    <div style={{fontSize: '12px', color: '#64748b', marginBottom: '8px'}}>Total Constraints Monitored</div>
+                    <div style={{fontSize: '32px', fontWeight: '700', color: '#3b82f6'}}>1,051</div>
+                  </div>
+                </div>
+                
+                {/* Peak Load Comparison */}
+                <div className="dashboard-card-large" style={{gridColumn: 'span 2'}}>
+                  <h3>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2" style={{display: 'inline', marginRight: '8px', verticalAlign: 'middle'}}>
+                      <path d="M18 20V10M12 20V4M6 20v-6"/>
+                    </svg>
+                    Load Profile Analysis
+                  </h3>
+                  <div className="comparison-chart" style={{marginTop: '24px', gap: '20px'}}>
+                    <div className="comparison-item">
+                      <div className="comparison-label" style={{fontSize: '13px', marginBottom: '8px'}}>
+                        Summer Peak Load
+                        <span style={{float: 'right', color: '#1e293b', fontWeight: '600'}}>18,245 MW</span>
+                      </div>
+                      <div className="comparison-bar-group">
+                        <div className="comparison-bar peak" style={{height: '48px'}}>
+                          <div className="comparison-fill" style={{width: '90%'}}></div>
+                        </div>
+                      </div>
+                      <div style={{fontSize: '11px', color: '#64748b', marginTop: '4px'}}>
+                        Capacity Factor: 90% • Typical: July-August 14:00-18:00
+                      </div>
+                    </div>
+                    <div className="comparison-item">
+                      <div className="comparison-label" style={{fontSize: '13px', marginBottom: '8px'}}>
+                        Summer Off-Peak Load
+                        <span style={{float: 'right', color: '#1e293b', fontWeight: '600'}}>11,180 MW</span>
+                      </div>
+                      <div className="comparison-bar-group">
+                        <div className="comparison-bar offpeak" style={{height: '48px'}}>
+                          <div className="comparison-fill" style={{width: '55%'}}></div>
+                        </div>
+                      </div>
+                      <div style={{fontSize: '11px', color: '#64748b', marginTop: '4px'}}>
+                        Capacity Factor: 55% • Typical: July-August 22:00-06:00
+                      </div>
+                    </div>
+                    <div className="comparison-item">
+                      <div className="comparison-label" style={{fontSize: '13px', marginBottom: '8px'}}>
+                        Spring Light Load
+                        <span style={{float: 'right', color: '#1e293b', fontWeight: '600'}}>8,125 MW</span>
+                      </div>
+                      <div className="comparison-bar-group">
+                        <div className="comparison-bar light" style={{height: '48px'}}>
+                          <div className="comparison-fill" style={{width: '40%'}}></div>
+                        </div>
+                      </div>
+                      <div style={{fontSize: '11px', color: '#64748b', marginTop: '4px'}}>
+                        Capacity Factor: 40% • Typical: April-May 02:00-05:00
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginTop: '24px', padding: '20px', background: '#f8fafc', borderRadius: '8px'}}>
+                    <div style={{textAlign: 'center'}}>
+                      <div style={{fontSize: '11px', color: '#64748b', marginBottom: '4px'}}>Peak Demand</div>
+                      <div style={{fontSize: '20px', fontWeight: '700', color: '#ef4444'}}>20,450 MW</div>
+                    </div>
+                    <div style={{textAlign: 'center'}}>
+                      <div style={{fontSize: '11px', color: '#64748b', marginBottom: '4px'}}>Avg Demand</div>
+                      <div style={{fontSize: '20px', fontWeight: '700', color: '#3b82f6'}}>13,125 MW</div>
+                    </div>
+                    <div style={{textAlign: 'center'}}>
+                      <div style={{fontSize: '11px', color: '#64748b', marginBottom: '4px'}}>Load Factor</div>
+                      <div style={{fontSize: '20px', fontWeight: '700', color: '#10b981'}}>64.2%</div>
+                    </div>
+                    <div style={{textAlign: 'center'}}>
+                      <div style={{fontSize: '11px', color: '#64748b', marginBottom: '4px'}}>Reserve Margin</div>
+                      <div style={{fontSize: '20px', fontWeight: '700', color: '#6366f1'}}>18.5%</div>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* System Health Status */}
+                <div className="dashboard-card-large">
+                  <h3>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2" style={{display: 'inline', marginRight: '8px', verticalAlign: 'middle'}}>
+                      <circle cx="12" cy="12" r="10"/>
+                      <path d="M12 6v6l4 2"/>
+                    </svg>
+                    System Health & Overview
+                  </h3>
+                  <div style={{marginTop: '20px'}}>
+                    <div className="system-status" style={{borderTop: 'none', paddingTop: '0', marginTop: '0', marginBottom: '20px'}}>
+                      <div className="status-indicator status-operational">
+                        <span className="status-dot"></span>
+                        <span style={{fontSize: '15px'}}>System Operational - All Systems Normal</span>
+                      </div>
+                      <div className="status-detail">Last updated: {new Date().toLocaleString()}</div>
+                    </div>
+                    
+                    <div style={{display: 'grid', gridTemplateColumns: '1fr', gap: '12px', marginTop: '24px'}}>
+                      <div style={{padding: '16px', background: '#f0fdf4', borderLeft: '4px solid #10b981', borderRadius: '6px'}}>
+                        <div style={{fontSize: '13px', fontWeight: '600', color: '#065f46', marginBottom: '4px'}}>Total Buses</div>
+                        <div style={{fontSize: '28px', fontWeight: '700', color: '#10b981'}}>{buses.length}</div>
+                      </div>
+                      <div style={{padding: '16px', background: '#eff6ff', borderLeft: '4px solid #3b82f6', borderRadius: '6px'}}>
+                        <div style={{fontSize: '13px', fontWeight: '600', color: '#1e3a8a', marginBottom: '4px'}}>Total Branches</div>
+                        <div style={{fontSize: '28px', fontWeight: '700', color: '#3b82f6'}}>{branches.length}</div>
+                      </div>
+                      <div style={{padding: '16px', background: '#fef3c7', borderLeft: '4px solid #f59e0b', borderRadius: '6px'}}>
+                        <div style={{fontSize: '13px', fontWeight: '600', color: '#78350f', marginBottom: '4px'}}>Total Generators</div>
+                        <div style={{fontSize: '28px', fontWeight: '700', color: '#f59e0b'}}>{generators.length}</div>
+                      </div>
+                      <div style={{padding: '16px', background: '#fef2f2', borderLeft: '4px solid #ef4444', borderRadius: '6px'}}>
+                        <div style={{fontSize: '13px', fontWeight: '600', color: '#7f1d1d', marginBottom: '4px'}}>Active Constraints</div>
+                        <div style={{fontSize: '28px', fontWeight: '700', color: '#ef4444'}}>1,051</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

@@ -1,703 +1,760 @@
 import { useState, useEffect } from 'react';
 import useGridInfrastructure from '../hooks/useGridInfrastructure';
-import { 
-  calculateLoadGrowth, 
-  calculateLineLoss, 
-  calculateLMP,
-  calculateDemandResponse,
-  calculateCongestionRatio,
-  calculateReliabilityIndex,
-  calculateTotalCapacity
-} from '../utils/powerFlowCalculations';
-import { formatPower, formatCurrency, formatPercentage, formatStatus } from '../utils/formatters';
 import './Analysis.css';
 
 const Analysis = () => {
   const { buses, branches, generators, loading: dataLoading } = useGridInfrastructure();
   
-  // Active section state
-  const [activeSection, setActiveSection] = useState('assumptions'); // 'assumptions' or 'results'
-  const [activeResultsTab, setActiveResultsTab] = useState('overview');
+  // Tab state
+  const [activeTab, setActiveTab] = useState('coverage'); // 'coverage' or 'assumption'
   
-  // Assumption states
-  const [assumptions, setAssumptions] = useState({
-    loadGrowth: 1.5, // % annual growth
-    demandResponse: 0, // % participation
-    renewableIntegration: 25, // % penetration
-    congestionLevel: 0.5, // 0-1 scale
-    generationProfile: 'baseload', // baseload, intermediate, peak
-    timeHorizon: 2030, // target year
-    contingency: 'none' // none, n-1, n-2
+  // Coverage metrics state
+  const [voltageThreshold, setVoltageThreshold] = useState(200);
+  const [tempThreshold, setTempThreshold] = useState(200);
+  const [busThreshold, setBusThreshold] = useState(200);
+  const [tempBusThreshold, setTempBusThreshold] = useState(200);
+  const [selectedScenario, setSelectedScenario] = useState('summer-peak');
+  const [headroomScenario, setHeadroomScenario] = useState('summer-peak');
+  
+  // Tables state (admin editable)
+  const [roadmapData, setRoadmapData] = useState([
+    { iso: 'ISO-NE', study_vintage: '2028 CCIS Build', queue_window_close: 'Q4 2025', recommended_purchase_timing: '6-9 months before window close', next_refresh_eta: 'Q1 2026', scope_of_change: 'Update to 2030 LMPs & revised headroom', status: 'Available' },
+    { iso: 'PJM', study_vintage: '2030 PCM baseline', queue_window_close: 'Q2 2026', recommended_purchase_timing: '6-9 months before window close', next_refresh_eta: 'Q4 2025', scope_of_change: 'Curtailment model refresh + queue overlay', status: 'In progress' },
+    { iso: 'MISO', study_vintage: 'FTR 2029 study', queue_window_close: 'Q3 2026', recommended_purchase_timing: '6-9 months before window close', next_refresh_eta: 'Q2 2026', scope_of_change: 'Update price forwards & constraint library', status: 'Planned' }
+  ]);
+  
+  const [releaseNotes, setReleaseNotes] = useState([
+    { iso: 'ISO-NE', release_date: '2025-01-15 00:00:00', version: 'ISO_NE_CCIS_2028_v1.1', change_summary: 'Refreshed curtailment model with 2024 constraints; updated 5-yr LMP strip.', tags: 'curtailment, pricing' },
+    { iso: 'PJM', release_date: '2024-12-20 00:00:00', version: 'PJM_PCM_2030_v1.0', change_summary: 'Initial PCM baseline with queue overlay and headroom robustness scoring.', tags: 'headroom, queue' },
+    { iso: 'MISO', release_date: '2024-11-05 00:00:00', version: 'MISO_FTR_2029_beta', change_summary: 'Added preliminary nodal basis curves and constraint frequency estimates.', tags: 'basis, constraints' }
+  ]);
+  
+  // Calculate metrics
+  const totalSubstations = buses.length;
+  const busesAboveThreshold = buses.filter(bus => {
+    const lmpValue = parseFloat(bus.lmp_2025) || 0;
+    return lmpValue > busThreshold;
+  }).length;
+  
+  // Graph data states
+  const [isoSummaryMetric, setIsoSummaryMetric] = useState('avg'); // avg, min, max
+  const [isoSummaryScenario, setIsoSummaryScenario] = useState('summer-peak');
+  
+  const [constraintView, setConstraintView] = useState('preexisting');
+  const [constraintScenario, setConstraintScenario] = useState('summer-peak');
+  
+  const [queueStatus, setQueueStatus] = useState('active');
+  
+  const [investmentYear, setInvestmentYear] = useState(1);
+  
+  const [typicalDayISO, setTypicalDayISO] = useState('ISO-NE');
+  const [typicalDayScenario, setTypicalDayScenario] = useState('summer-peak');
+  
+  // Assumptions tab states
+  const [powerFlowFuelType, setPowerFlowFuelType] = useState('all');
+  const [lmpFuelType, setLmpFuelType] = useState('all');
+  const [assumptionsData, setAssumptionsData] = useState({
+    model: 'PCM 2030 Baseline',
+    scenario: 'Summer Peak Load',
+    outlook: '2030 Horizon',
+    majorNuLRTP: 'ISO-NE LRTP 2024'
   });
   
-  // Selected elements for analysis
-  const [selectedBuses, setSelectedBuses] = useState([]);
-  const [selectedBranches, setSelectedBranches] = useState([]);
+  // Dummy data for graphs
+  const isos = ['ISO-NE', 'PJM', 'MISO', 'CAISO', 'ERCOT', 'SPP', 'NYISO'];
+  const fuelTypes = ['All', 'Solar', 'Wind', 'Gas', 'Coal', 'Nuclear', 'Hydro'];
   
-  // Projection results
-  const [projections, setProjections] = useState(null);
-  const [loading, setLoading] = useState(false);
-
-  // Auto-select all elements when data loads
-  useEffect(() => {
-    if (buses.length > 0 && selectedBuses.length === 0) {
-      setSelectedBuses(buses.map(b => b.id || b.bus_id));
-    }
-    if (branches.length > 0 && selectedBranches.length === 0) {
-      setSelectedBranches(branches.map(b => b.id || b.branch_id));
-    }
-  }, [buses, branches]);
-
-  const updateAssumption = (key, value) => {
-    setAssumptions(prev => ({ ...prev, [key]: value }));
-  };
-
-  const toggleBusSelection = (busId) => {
-    setSelectedBuses(prev =>
-      prev.includes(busId) ? prev.filter(id => id !== busId) : [...prev, busId]
-    );
-  };
-
-  const toggleBranchSelection = (branchId) => {
-    setSelectedBranches(prev =>
-      prev.includes(branchId) ? prev.filter(id => id !== branchId) : [...prev, branchId]
-    );
-  };
-
-  const calculateProjections = async () => {
-    if (buses.length === 0) return;
-    
-    setLoading(true);
-    setActiveSection('results');
-    
-    try {
-      const baseYear = 2025;
-      const yearDifference = assumptions.timeHorizon - baseYear;
-
-      // Calculate projections for buses
-      const busProjections = buses
-        .filter(bus => selectedBuses.includes(bus.id || bus.bus_id))
-        .map(bus => {
-          const baseLoad = parseFloat(bus.lmp_2025) || 0;
-          const projectedLoad = calculateLoadGrowth(baseLoad, assumptions.loadGrowth, yearDifference);
-          const adjustedLoad = calculateDemandResponse(projectedLoad, assumptions.demandResponse);
-          const finalLMP = calculateLMP(adjustedLoad, assumptions.renewableIntegration, assumptions.congestionLevel);
-
-          return {
-            bus_id: bus.id || bus.bus_id,
-            bus_name: bus.name || bus.bus_name || `Bus ${bus.id}`,
-            voltage: bus.voltage,
-            currentLMP: baseLoad,
-            projectedLMP: finalLMP,
-            loadGrowth: ((projectedLoad - baseLoad) / baseLoad) * 100,
-            demandResponseImpact: ((projectedLoad - adjustedLoad) / projectedLoad) * 100,
-            renewableImpact: ((adjustedLoad - finalLMP) / adjustedLoad) * 100
-          };
-        });
-
-      // Calculate projections for branches
-      const branchProjections = branches
-        .filter(branch => selectedBranches.includes(branch.id || branch.branch_id))
-        .map(branch => {
-          const baseFlow = 100 + Math.random() * 100; // Simplified
-          const flowMagnitude = baseFlow * (1 + assumptions.congestionLevel);
-          const lineLoss = calculateLineLoss(flowMagnitude);
-          const congestionRatio = calculateCongestionRatio(flowMagnitude, 200); // Assuming 200MW thermal limit
-
-          return {
-            branch_id: branch.id || branch.branch_id,
-            from_bus: branch.from_bus || branch.from_bus_id,
-            to_bus: branch.to_bus || branch.to_bus_id,
-            projectedFlow: parseFloat(flowMagnitude.toFixed(2)),
-            congestionRatio: parseFloat(Math.min(1, congestionRatio).toFixed(2)),
-            lineLoss: parseFloat(lineLoss.toFixed(2)),
-            status: branch.status === 1 ? 'Closed' : 'Open'
-          };
-        });
-
-      // Calculate system-wide metrics
-      const totalCapacity = calculateTotalCapacity(generators);
-      const totalDemand = busProjections.reduce((sum, bus) => sum + bus.projectedLMP, 0);
-      const totalLineLosses = branchProjections.reduce((sum, branch) => sum + branch.lineLoss, 0);
-      const averageLMP = totalDemand / Math.max(1, busProjections.length);
-      const reliabilityIndex = calculateReliabilityIndex(0.95, assumptions.demandResponse, assumptions.renewableIntegration);
-
-      setProjections({
-        buses: busProjections,
-        branches: branchProjections,
-        systemMetrics: {
-          totalDemand: totalDemand.toFixed(2),
-          totalGeneration: totalCapacity.toFixed(2),
-          totalLineLosses: totalLineLosses.toFixed(2),
-          averageLMP: averageLMP.toFixed(2),
-          reliabilityIndex: reliabilityIndex.toFixed(3),
-          renewablePercentage: assumptions.renewableIntegration,
-          congestionLevel: (assumptions.congestionLevel * 100).toFixed(0)
-        },
-        constraints: identifyConstraints(busProjections, branchProjections),
-        recommendations: generateRecommendations(busProjections, branchProjections, {
-          totalCapacity,
-          totalDemand,
-          reliabilityIndex
-        })
-      });
-    } catch (error) {
-      console.error('Error calculating projections:', error);
-    } finally {
-      setLoading(false);
+  const handleThresholdChange = (e) => {
+    if (e.key === 'Enter') {
+      setVoltageThreshold(tempThreshold);
     }
   };
-
-  const identifyConstraints = (busProj, branchProj) => {
-    const constraints = [];
-
-    // Check for high congestion
-    branchProj.forEach(branch => {
-      if (branch.congestionRatio > 0.85) {
-        constraints.push({
-          element: `Branch ${branch.from_bus}-${branch.to_bus}`,
-          type: 'Thermal Overload',
-          severity: branch.congestionRatio > 0.95 ? 'high' : 'medium',
-          threshold: `${(branch.congestionRatio * 100).toFixed(0)}% utilization`,
-          impact: 'May cause line trip under contingency'
-        });
-      }
-    });
-
-    // Check for voltage issues (simplified)
-    busProj.forEach(bus => {
-      if (bus.projectedLMP > bus.currentLMP * 1.5) {
-        constraints.push({
-          element: bus.bus_name,
-          type: 'High Price Forecast',
-          severity: 'medium',
-          threshold: `$${bus.projectedLMP.toFixed(2)}/MWh`,
-          impact: 'Indicates potential supply shortage'
-        });
-      }
-    });
-
-    return constraints;
+  
+  const handleBusThresholdChange = (e) => {
+    if (e.key === 'Enter') {
+      setBusThreshold(tempBusThreshold);
+    }
   };
-
-  const generateRecommendations = (busProj, branchProj, metrics) => {
-    const recommendations = [];
-
-    // High congestion recommendations
-    const congestedBranches = branchProj.filter(b => b.congestionRatio > 0.85);
-    if (congestedBranches.length > 0) {
-      recommendations.push({
-        priority: 'High',
-        action: `Upgrade capacity on ${congestedBranches.length} congested transmission lines`,
-        impact: 'Reduce congestion costs and improve reliability',
-        estimatedCost: '$5-10M',
-        timeframe: '2-3 years'
-      });
-    }
-
-    // Reliability recommendations
-    if (metrics.reliabilityIndex < 0.95) {
-      recommendations.push({
-        priority: 'High',
-        action: 'Implement demand response programs',
-        impact: `Improve reliability from ${(metrics.reliabilityIndex * 100).toFixed(1)}% to 95%+`,
-        estimatedCost: '$2-3M',
-        timeframe: '1 year'
-      });
-    }
-
-    // Renewable integration
-    if (assumptions.renewableIntegration < 30) {
-      recommendations.push({
-        priority: 'Medium',
-        action: 'Increase renewable energy integration',
-        impact: 'Reduce wholesale energy prices by 10-15%',
-        estimatedCost: '$10-20M',
-        timeframe: '3-5 years'
-      });
-    }
-
-    // Capacity recommendations
-    if (metrics.totalDemand > metrics.totalCapacity * 0.85) {
-      recommendations.push({
-        priority: 'High',
-        action: 'Add generation capacity or battery storage',
-        impact: 'Ensure adequate reserve margins',
-        estimatedCost: '$15-30M',
-        timeframe: '3-4 years'
-      });
-    }
-
-    return recommendations;
-  };
-
-  if (dataLoading) {
-    return (
-      <div className="analysis-page-loading">
-        <div className="loading-spinner"></div>
-        <p>Loading grid data...</p>
-      </div>
-    );
-  }
-
+  
   return (
     <div className="analysis-page">
-      {/* Loading Overlay */}
-      {(loading || dataLoading) && (
-        <div className="analysis-loading-overlay">
-          <div className="analysis-loading-content">
-            <div className="loading-spinner"></div>
-            <p>{dataLoading ? 'Loading grid data...' : 'Running power flow analysis...'}</p>
-          </div>
-        </div>
-      )}
-      
       <div className="analysis-container">
-        <h1>Power Flow Analysis</h1>
+        {/* Page Header */}
+        <div className="page-header">
+          <h1>Coverage & Summary</h1>
+          <p className="page-subtitle">Comprehensive grid coverage metrics and system analysis</p>
+        </div>
         
-        {/* Section Toggle */}
-        <div className="section-toggle">
-          <button
-            className={`section-btn ${activeSection === 'assumptions' ? 'active' : ''}`}
-            onClick={() => setActiveSection('assumptions')}
+        {/* Tab Navigation */}
+        <div className="tab-navigation">
+          <button 
+            className={`tab-button ${activeTab === 'coverage' ? 'active' : ''}`}
+            onClick={() => setActiveTab('coverage')}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="4" y1="21" x2="4" y2="14"/>
-              <line x1="4" y1="10" x2="4" y2="3"/>
-              <line x1="12" y1="21" x2="12" y2="12"/>
-              <line x1="12" y1="8" x2="12" y2="3"/>
-              <line x1="20" y1="21" x2="20" y2="16"/>
-              <line x1="20" y1="12" x2="20" y2="3"/>
-              <line x1="1" y1="14" x2="7" y2="14"/>
-              <line x1="9" y1="8" x2="15" y2="8"/>
-              <line x1="17" y1="16" x2="23" y2="16"/>
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
             </svg>
-            Assumptions (Input Parameters)
+            Coverage
           </button>
-          <button
-            className={`section-btn ${activeSection === 'results' ? 'active' : ''}`}
-            onClick={() => setActiveSection('results')}
-            disabled={!projections}
+          <button 
+            className={`tab-button ${activeTab === 'assumption' ? 'active' : ''}`}
+            onClick={() => setActiveTab('assumption')}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="18" y1="20" x2="18" y2="10"/>
-              <line x1="12" y1="20" x2="12" y2="4"/>
-              <line x1="6" y1="20" x2="6" y2="14"/>
+              <path d="M12 20h9"/>
+              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
             </svg>
-            Summary (Analysis Results)
+            Assumptions
           </button>
         </div>
-
-        {/* Assumptions Section */}
-        {activeSection === 'assumptions' && (
-          <div className="assumptions-section">
-            <div className="assumptions-grid">
-              {/* Left: Controls */}
-              <div className="assumptions-controls">
-                <h2>Analysis Parameters</h2>
-                
-                <div className="control-group">
-                  <label>Load Growth Rate (%/year)</label>
-                  <input
-                    type="number"
-                    value={assumptions.loadGrowth}
-                    onChange={(e) => updateAssumption('loadGrowth', parseFloat(e.target.value))}
-                    step="0.1"
-                    min="0"
-                    max="10"
-                    className="number-input"
-                  />
-                  <input
-                    type="range"
-                    value={assumptions.loadGrowth}
-                    onChange={(e) => updateAssumption('loadGrowth', parseFloat(e.target.value))}
-                    min="0"
-                    max="5"
-                    step="0.1"
-                    className="range-slider"
-                  />
+        
+        {/* Coverage Tab Content */}
+        {activeTab === 'coverage' && (
+          <div className="tab-content">
+            {/* Horizontal Stats Bar */}
+            <div className="stats-bar">
+              <div className="stat-card">
+                <div className="stat-icon" style={{background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)'}}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/>
+                  </svg>
                 </div>
-
-                <div className="control-group">
-                  <label>Demand Response Participation (%)</label>
-                  <input
-                    type="number"
-                    value={assumptions.demandResponse}
-                    onChange={(e) => updateAssumption('demandResponse', parseFloat(e.target.value))}
-                    step="1"
-                    min="0"
-                    max="30"
-                    className="number-input"
-                  />
-                  <input
-                    type="range"
-                    value={assumptions.demandResponse}
-                    onChange={(e) => updateAssumption('demandResponse', parseFloat(e.target.value))}
-                    min="0"
-                    max="30"
-                    step="1"
-                    className="range-slider"
-                  />
+                <div className="stat-content">
+                  <div className="stat-label">ISO & States</div>
+                  <div className="stat-value">7 ISO / 50 States</div>
                 </div>
-
-                <div className="control-group">
-                  <label>Renewable Energy Penetration (%)</label>
-                  <input
-                    type="number"
-                    value={assumptions.renewableIntegration}
-                    onChange={(e) => updateAssumption('renewableIntegration', parseFloat(e.target.value))}
-                    step="5"
-                    min="0"
-                    max="100"
-                    className="number-input"
-                  />
-                  <input
-                    type="range"
-                    value={assumptions.renewableIntegration}
-                    onChange={(e) => updateAssumption('renewableIntegration', parseFloat(e.target.value))}
-                    min="0"
-                    max="100"
-                    step="5"
-                    className="range-slider"
-                  />
-                </div>
-
-                <div className="control-group">
-                  <label>Congestion Level</label>
-                  <input
-                    type="range"
-                    value={assumptions.congestionLevel}
-                    onChange={(e) => updateAssumption('congestionLevel', parseFloat(e.target.value))}
-                    min="0"
-                    max="1"
-                    step="0.1"
-                    className="range-slider"
-                  />
-                  <span className="value-badge">{(assumptions.congestionLevel * 100).toFixed(0)}%</span>
-                </div>
-
-                <div className="control-group">
-                  <label>Time Horizon (Year)</label>
-                  <select
-                    value={assumptions.timeHorizon}
-                    onChange={(e) => updateAssumption('timeHorizon', parseInt(e.target.value))}
-                    className="select-input"
-                  >
-                    <option value={2026}>2026 (1 year)</option>
-                    <option value={2027}>2027 (2 years)</option>
-                    <option value={2028}>2028 (3 years)</option>
-                    <option value={2029}>2029 (4 years)</option>
-                    <option value={2030}>2030 (5 years)</option>
-                    <option value={2035}>2035 (10 years)</option>
-                    <option value={2040}>2040 (15 years)</option>
-                  </select>
-                </div>
-
-                <div className="control-group">
-                  <label>Contingency Analysis</label>
-                  <select
-                    value={assumptions.contingency}
-                    onChange={(e) => updateAssumption('contingency', e.target.value)}
-                    className="select-input"
-                  >
-                    <option value="none">None</option>
-                    <option value="n-1">N-1 (Single Element Outage)</option>
-                    <option value="n-2">N-2 (Double Element Outage)</option>
-                  </select>
-                </div>
-
-                <button 
-                  className="calculate-btn"
-                  onClick={calculateProjections}
-                  disabled={loading || selectedBuses.length === 0}
-                >
-                  {loading ? (
-                    <>
-                      <div className="btn-spinner"></div>
-                      Calculating...
-                    </>
-                  ) : (
-                    <>
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M21 12a9 9 0 11-6.219-8.56"/>
-                      </svg>
-                      Run Power Flow Analysis
-                    </>
-                  )}
-                </button>
               </div>
-
-              {/* Right: Selection Summary */}
-              <div className="selection-summary">
-                <h3>Analysis Scope</h3>
-                <div className="summary-stats">
-                  <div className="stat-box">
-                    <div className="stat-value">{selectedBuses.length}</div>
-                    <div className="stat-label">Buses Selected</div>
+              
+              <div className="stat-card">
+                <div className="stat-icon" style={{background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)'}}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                    <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                  </svg>
+                </div>
+                <div className="stat-content">
+                  <div className="stat-label">Substations Monitored</div>
+                  <div className="stat-value">{totalSubstations.toLocaleString()}</div>
+                </div>
+              </div>
+              
+              <div className="stat-card">
+                <div className="stat-icon" style={{background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'}}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                    <line x1="12" y1="1" x2="12" y2="23"/>
+                    <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                  </svg>
+                </div>
+                <div className="stat-content">
+                  <div className="stat-label">Total Headroom</div>
+                  <div className="stat-value stat-editable">
+                    <span>Bus &gt;</span>
+                    <input 
+                      type="number" 
+                      value={tempThreshold} 
+                      onChange={(e) => setTempThreshold(Number(e.target.value))}
+                      onKeyDown={handleThresholdChange}
+                      className="threshold-input"
+                    />
+                    <span>MW</span>
                   </div>
-                  <div className="stat-box">
-                    <div className="stat-value">{selectedBranches.length}</div>
-                    <div className="stat-label">Branches Selected</div>
+                  <select 
+                    value={headroomScenario} 
+                    onChange={(e) => setHeadroomScenario(e.target.value)}
+                    className="stat-scenario-select"
+                  >
+                    <option value="summer-peak">Summer Peak</option>
+                    <option value="summer-offpeak">Summer Off-Peak</option>
+                    <option value="spring-light">Spring Light Load</option>
+                  </select>
+                </div>
+              </div>
+              
+              <div className="stat-card">
+                <div className="stat-icon" style={{background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'}}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                    <path d="M18 20V10M12 20V4M6 20v-6"/>
+                  </svg>
+                </div>
+                <div className="stat-content">
+                  <div className="stat-label">Buses Count</div>
+                  <div className="stat-value stat-editable">
+                    <span>Bus &gt;</span>
+                    <input 
+                      type="number" 
+                      value={tempBusThreshold} 
+                      onChange={(e) => setTempBusThreshold(Number(e.target.value))}
+                      onKeyDown={handleBusThresholdChange}
+                      className="threshold-input"
+                    />
+                    <span>MW</span>
                   </div>
-                  <div className="stat-box">
-                    <div className="stat-value">{generators.length}</div>
-                    <div className="stat-label">Generators</div>
+                  <div className="stat-count-display">{busesAboveThreshold}</div>
+                </div>
+              </div>
+            </div>
+            
+            {/* Tables Section */}
+            <div className="tables-section">
+              {/* ISO Release Roadmap Table */}
+              <div className="data-table-container">
+                <div className="table-header">
+                  <h2>ISO Release Roadmap & Planned Updates</h2>
+                  <p className="table-subtitle">High-level view of current DB vintages and upcoming study refreshes by ISO. We typically provide siting analytics ~6 months before each ISO interconnection queue window closes.</p>
+                </div>
+                <div className="table-wrapper">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>ISO</th>
+                        <th>study_vintage</th>
+                        <th>queue_window_close</th>
+                        <th>recommended_purchase_timing</th>
+                        <th>next_refresh_eta</th>
+                        <th>scope_of_change</th>
+                        <th>status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {roadmapData.map((row, idx) => (
+                        <tr key={idx}>
+                          <td><span className="iso-badge">{row.iso}</span></td>
+                          <td>{row.study_vintage}</td>
+                          <td>{row.queue_window_close}</td>
+                          <td>{row.recommended_purchase_timing}</td>
+                          <td>{row.next_refresh_eta}</td>
+                          <td>{row.scope_of_change}</td>
+                          <td>
+                            <span className={`status-badge status-${row.status.toLowerCase().replace(' ', '-')}`}>
+                              {row.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              
+              {/* Recent Changes & Release Notes Table */}
+              <div className="data-table-container">
+                <div className="table-header">
+                  <h2>Recent Changes & Release Notes</h2>
+                  <p className="table-subtitle">Key updates in the latest DB drops - use this to confirm you are working off the latest ISO vintage.</p>
+                </div>
+                <div className="table-wrapper">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>ISO</th>
+                        <th>release_date</th>
+                        <th>version</th>
+                        <th>change_summary</th>
+                        <th>tags</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {releaseNotes.map((row, idx) => (
+                        <tr key={idx}>
+                          <td><span className="iso-badge">{row.iso}</span></td>
+                          <td>{new Date(row.release_date).toLocaleDateString()}</td>
+                          <td><code className="version-code">{row.version}</code></td>
+                          <td>{row.change_summary}</td>
+                          <td>
+                            {row.tags.split(',').map((tag, i) => (
+                              <span key={i} className="tag-badge">{tag.trim()}</span>
+                            ))}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            
+            {/* Graphs Section */}
+            <div className="graphs-section">
+              <div className="section-header">
+                <h2>System Analytics & Insights</h2>
+                <p className="section-subtitle">Comprehensive visualization of grid metrics across ISOs</p>
+              </div>
+              
+              <div className="graphs-grid">
+                {/* Graph 1: ISO wise summary */}
+                <div className="graph-card">
+                  <div className="graph-header">
+                    <h3>ISO-wise Summary</h3>
+                    <div className="graph-controls">
+                      <select value={isoSummaryScenario} onChange={(e) => setIsoSummaryScenario(e.target.value)} className="graph-select">
+                        <option value="summer-peak">Summer Peak</option>
+                        <option value="summer-offpeak">Summer Off-Peak</option>
+                        <option value="spring-light">Spring Light Load</option>
+                      </select>
+                      <select value={isoSummaryMetric} onChange={(e) => setIsoSummaryMetric(e.target.value)} className="graph-select">
+                        <option value="avg">Average</option>
+                        <option value="min">Minimum</option>
+                        <option value="max">Maximum</option>
+                      </select>
+                    </div>
                   </div>
-                  <div className="stat-box">
-                    <div className="stat-value">{formatPower(calculateTotalCapacity(generators))}</div>
-                    <div className="stat-label">Total Capacity</div>
+                  <div className="graph-content">
+                    <svg viewBox="0 0 400 250" className="bar-chart-svg">
+                      <line x1="40" y1="200" x2="380" y2="200" stroke="#e2e8f0" strokeWidth="2"/>
+                      {isos.map((iso, i) => {
+                        const height = 50 + Math.random() * 130;
+                        const x = 60 + i * 45;
+                        return (
+                          <g key={iso}>
+                            <rect x={x} y={200 - height} width="35" height={height} fill="#3b82f6" rx="3"/>
+                            <text x={x + 17.5} y={195 - height} fontSize="11" fontWeight="600" fill="#1e293b" textAnchor="middle">
+                              {(1200 + Math.random() * 800).toFixed(0)}
+                            </text>
+                            <text x={x + 17.5} y="220" fontSize="10" fill="#64748b" textAnchor="middle">{iso}</text>
+                          </g>
+                        );
+                      })}
+                      <text x="20" y="105" fontSize="12" fill="#64748b" textAnchor="middle" transform="rotate(-90 20 105)">MW</text>
+                    </svg>
                   </div>
                 </div>
-
-                <div className="methodology-box">
-                  <h4>Analysis Methodology</h4>
-                  <ul>
-                    <li><strong>Load Forecasting:</strong> Exponential growth model</li>
-                    <li><strong>Power Flow:</strong> Newton-Raphson approximation</li>
-                    <li><strong>Line Losses:</strong> I² × R formula</li>
-                    <li><strong>LMP Calculation:</strong> Merit order + congestion + losses</li>
-                    <li><strong>Reliability:</strong> LOLE-based index calculation</li>
-                  </ul>
+                
+                {/* Graph 2: Constraint Overview */}
+                <div className="graph-card">
+                  <div className="graph-header">
+                    <h3>Constraint Overview</h3>
+                    <div className="graph-controls">
+                      <select value={constraintView} onChange={(e) => setConstraintView(e.target.value)} className="graph-select">
+                        <option value="preexisting">Preexisting</option>
+                        <option value="new">New</option>
+                      </select>
+                      <select value={constraintScenario} onChange={(e) => setConstraintScenario(e.target.value)} className="graph-select">
+                        <option value="summer-peak">Summer Peak</option>
+                        <option value="summer-offpeak">Summer Off-Peak</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="graph-content">
+                    <svg viewBox="0 0 400 250" className="bar-chart-svg">
+                      <line x1="40" y1="200" x2="380" y2="200" stroke="#e2e8f0" strokeWidth="2"/>
+                      {isos.map((iso, i) => {
+                        const height = 40 + Math.random() * 140;
+                        const x = 60 + i * 45;
+                        return (
+                          <g key={iso}>
+                            <rect x={x} y={200 - height} width="35" height={height} fill="#ef4444" rx="3"/>
+                            <text x={x + 17.5} y={195 - height} fontSize="11" fontWeight="600" fill="#1e293b" textAnchor="middle">
+                              {(150 + Math.random() * 300).toFixed(0)}
+                            </text>
+                            <text x={x + 17.5} y="220" fontSize="10" fill="#64748b" textAnchor="middle">{iso}</text>
+                          </g>
+                        );
+                      })}
+                      <text x="20" y="105" fontSize="12" fill="#64748b" textAnchor="middle" transform="rotate(-90 20 105)">Count</text>
+                    </svg>
+                  </div>
+                </div>
+                
+                {/* Graph 3: Interconnection Queue */}
+                <div className="graph-card">
+                  <div className="graph-header">
+                    <h3>Interconnection Queue</h3>
+                    <div className="graph-legend">
+                      <span className="legend-item"><span className="legend-dot" style={{background: '#10b981'}}></span>Active</span>
+                      <span className="legend-item"><span className="legend-dot" style={{background: '#f59e0b'}}></span>Withdrawn</span>
+                      <span className="legend-item"><span className="legend-dot" style={{background: '#6366f1'}}></span>Done</span>
+                    </div>
+                  </div>
+                  <div className="graph-content">
+                    <svg viewBox="0 0 400 250" className="bar-chart-svg">
+                      <line x1="40" y1="200" x2="380" y2="200" stroke="#e2e8f0" strokeWidth="2"/>
+                      {isos.map((iso, i) => {
+                        const x = 60 + i * 45;
+                        const h1 = 30 + Math.random() * 50;
+                        const h2 = 25 + Math.random() * 40;
+                        const h3 = 20 + Math.random() * 35;
+                        return (
+                          <g key={iso}>
+                            <rect x={x} y={200 - h1 - h2 - h3} width="35" height={h1} fill="#10b981" rx="3"/>
+                            <rect x={x} y={200 - h2 - h3} width="35" height={h2} fill="#f59e0b"/>
+                            <rect x={x} y={200 - h3} width="35" height={h3} fill="#6366f1"/>
+                            <text x={x + 17.5} y="220" fontSize="10" fill="#64748b" textAnchor="middle">{iso}</text>
+                          </g>
+                        );
+                      })}
+                      <text x="20" y="105" fontSize="12" fill="#64748b" textAnchor="middle" transform="rotate(-90 20 105)">MW</text>
+                    </svg>
+                  </div>
+                </div>
+                
+                {/* Graph 4: Current Fleet */}
+                <div className="graph-card">
+                  <div className="graph-header">
+                    <h3>Current Fleet by Fuel Type</h3>
+                    <div className="graph-legend">
+                      <span className="legend-item"><span className="legend-dot" style={{background: '#fbbf24'}}></span>Solar</span>
+                      <span className="legend-item"><span className="legend-dot" style={{background: '#60a5fa'}}></span>Wind</span>
+                      <span className="legend-item"><span className="legend-dot" style={{background: '#94a3b8'}}></span>Gas</span>
+                      <span className="legend-item"><span className="legend-dot" style={{background: '#1f2937'}}></span>Coal</span>
+                    </div>
+                  </div>
+                  <div className="graph-content">
+                    <svg viewBox="0 0 400 250" className="bar-chart-svg">
+                      <line x1="40" y1="200" x2="380" y2="200" stroke="#e2e8f0" strokeWidth="2"/>
+                      {isos.map((iso, i) => {
+                        const x = 60 + i * 45;
+                        const h1 = 20 + Math.random() * 30;
+                        const h2 = 25 + Math.random() * 35;
+                        const h3 = 35 + Math.random() * 50;
+                        const h4 = 15 + Math.random() * 25;
+                        return (
+                          <g key={iso}>
+                            <rect x={x} y={200 - h1 - h2 - h3 - h4} width="35" height={h1} fill="#fbbf24" rx="3"/>
+                            <rect x={x} y={200 - h2 - h3 - h4} width="35" height={h2} fill="#60a5fa"/>
+                            <rect x={x} y={200 - h3 - h4} width="35" height={h3} fill="#94a3b8"/>
+                            <rect x={x} y={200 - h4} width="35" height={h4} fill="#1f2937"/>
+                            <text x={x + 17.5} y="220" fontSize="10" fill="#64748b" textAnchor="middle">{iso}</text>
+                          </g>
+                        );
+                      })}
+                      <text x="20" y="105" fontSize="12" fill="#64748b" textAnchor="middle" transform="rotate(-90 20 105)">MW</text>
+                    </svg>
+                  </div>
+                </div>
+                
+                {/* Graph 5: NU Investment */}
+                <div className="graph-card">
+                  <div className="graph-header">
+                    <h3>NU Investment</h3>
+                    <div className="graph-controls">
+                      <select value={investmentYear} onChange={(e) => setInvestmentYear(Number(e.target.value))} className="graph-select">
+                        <option value="1">1 Year</option>
+                        <option value="2">2 Years</option>
+                        <option value="3">3 Years</option>
+                        <option value="5">5 Years</option>
+                        <option value="10">10 Years</option>
+                        <option value="15">15 Years</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="graph-content">
+                    <svg viewBox="0 0 400 250" className="bar-chart-svg">
+                      <line x1="40" y1="200" x2="380" y2="200" stroke="#e2e8f0" strokeWidth="2"/>
+                      {isos.map((iso, i) => {
+                        const height = 50 + Math.random() * 120;
+                        const x = 60 + i * 45;
+                        return (
+                          <g key={iso}>
+                            <rect x={x} y={200 - height} width="35" height={height} fill="#10b981" rx="3"/>
+                            <text x={x + 17.5} y={195 - height} fontSize="11" fontWeight="600" fill="#1e293b" textAnchor="middle">
+                              ${(50 + Math.random() * 200).toFixed(0)}M
+                            </text>
+                            <text x={x + 17.5} y="220" fontSize="10" fill="#64748b" textAnchor="middle">{iso}</text>
+                          </g>
+                        );
+                      })}
+                      <text x="20" y="105" fontSize="12" fill="#64748b" textAnchor="middle" transform="rotate(-90 20 105)">$ Million</text>
+                    </svg>
+                  </div>
+                </div>
+                
+                {/* Graph 6: Typical Day */}
+                <div className="graph-card">
+                  <div className="graph-header">
+                    <h3>Typical Day Profile</h3>
+                    <div className="graph-controls">
+                      <select value={typicalDayISO} onChange={(e) => setTypicalDayISO(e.target.value)} className="graph-select">
+                        {isos.map(iso => <option key={iso} value={iso}>{iso}</option>)}
+                      </select>
+                      <select value={typicalDayScenario} onChange={(e) => setTypicalDayScenario(e.target.value)} className="graph-select">
+                        <option value="summer-peak">Summer Peak</option>
+                        <option value="summer-offpeak">Summer Off-Peak</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="graph-content">
+                    <svg viewBox="0 0 400 250" className="line-chart-svg">
+                      <line x1="40" y1="200" x2="380" y2="200" stroke="#e2e8f0" strokeWidth="2"/>
+                      <line x1="40" y1="50" x2="40" y2="200" stroke="#e2e8f0" strokeWidth="2"/>
+                      
+                      {/* Demand line */}
+                      <polyline
+                        fill="none"
+                        stroke="#1e293b"
+                        strokeWidth="2.5"
+                        points="40,180 60,170 80,150 100,120 120,100 140,90 160,85 180,80 200,85 220,95 240,110 260,130 280,140 300,145 320,155 340,170 360,180 380,185"
+                      />
+                      
+                      {/* Solar */}
+                      <polyline
+                        fill="none"
+                        stroke="#fbbf24"
+                        strokeWidth="2"
+                        points="40,200 60,195 80,185 100,160 120,130 140,110 160,100 180,95 200,100 220,110 240,135 260,165 280,185 300,195 320,200 340,200 360,200 380,200"
+                      />
+                      
+                      {/* Wind */}
+                      <polyline
+                        fill="none"
+                        stroke="#60a5fa"
+                        strokeWidth="2"
+                        points="40,200 60,190 80,185 100,175 120,165 140,160 160,155 180,150 200,155 220,165 240,170 260,175 280,180 300,185 320,190 340,195 360,198 380,200"
+                      />
+                      
+                      {/* Grid lines */}
+                      {[0, 6, 12, 18, 24].map(hour => (
+                        <text key={hour} x={40 + (hour / 24) * 340} y="220" fontSize="10" fill="#64748b" textAnchor="middle">{hour}h</text>
+                      ))}
+                      
+                      <text x="20" y="125" fontSize="12" fill="#64748b" textAnchor="middle" transform="rotate(-90 20 125)">MW</text>
+                      
+                      {/* Legend */}
+                      <g transform="translate(100, 30)">
+                        <line x1="0" y1="5" x2="20" y2="5" stroke="#1e293b" strokeWidth="2.5"/>
+                        <text x="25" y="10" fontSize="11" fill="#64748b">Demand</text>
+                        
+                        <line x1="80" y1="5" x2="100" y2="5" stroke="#fbbf24" strokeWidth="2"/>
+                        <text x="105" y="10" fontSize="11" fill="#64748b">Solar</text>
+                        
+                        <line x1="160" y1="5" x2="180" y2="5" stroke="#60a5fa" strokeWidth="2"/>
+                        <text x="185" y="10" fontSize="11" fill="#64748b">Wind</text>
+                      </g>
+                    </svg>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
         )}
-
-        {/* Results Section */}
-        {activeSection === 'results' && projections && (
-          <div className="results-section">
-            {/* Results Tabs */}
-            <div className="results-tabs">
-              <button
-                className={`tab-btn ${activeResultsTab === 'overview' ? 'active' : ''}`}
-                onClick={() => setActiveResultsTab('overview')}
-              >
-                System Overview
-              </button>
-              <button
-                className={`tab-btn ${activeResultsTab === 'buses' ? 'active' : ''}`}
-                onClick={() => setActiveResultsTab('buses')}
-              >
-                Bus Projections
-              </button>
-              <button
-                className={`tab-btn ${activeResultsTab === 'branches' ? 'active' : ''}`}
-                onClick={() => setActiveResultsTab('branches')}
-              >
-                Branch Flow Analysis
-              </button>
-              <button
-                className={`tab-btn ${activeResultsTab === 'constraints' ? 'active' : ''}`}
-                onClick={() => setActiveResultsTab('constraints')}
-              >
-                Constraints & Violations
-              </button>
-              <button
-                className={`tab-btn ${activeResultsTab === 'recommendations' ? 'active' : ''}`}
-                onClick={() => setActiveResultsTab('recommendations')}
-              >
-                Recommendations
-              </button>
+        
+        {/* Assumptions Tab Content */}
+        {activeTab === 'assumption' && (
+          <div className="tab-content">
+            <div className="assumptions-container">
+              <h2>System Assumptions & Modeling Parameters</h2>
+              <p className="section-subtitle">Configure baseline assumptions, view forecasting graphs, and edit model parameters</p>
+              
+              {/* Main 4 Fields */}
+              <div className="main-fields-grid">
+                <div className="main-field-card">
+                  <div className="field-header">
+                    <div className="field-icon" style={{background: '#3b82f6'}}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                        <rect x="3" y="3" width="18" height="18" rx="2"/>
+                        <path d="M3 9h18M9 21V9"/>
+                      </svg>
+                    </div>
+                    <h3>Model Selected</h3>
+                  </div>
+                  <div className="field-value">{assumptionsData.model}</div>
+                </div>
+                
+                <div className="main-field-card">
+                  <div className="field-header">
+                    <div className="field-icon" style={{background: '#10b981'}}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                      </svg>
+                    </div>
+                    <h3>Scenario</h3>
+                  </div>
+                  <div className="field-value">{assumptionsData.scenario}</div>
+                </div>
+                
+                <div className="main-field-card">
+                  <div className="field-header">
+                    <div className="field-icon" style={{background: '#f59e0b'}}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <polyline points="12 6 12 12 16 14"/>
+                      </svg>
+                    </div>
+                    <h3>Outlook</h3>
+                  </div>
+                  <div className="field-value">{assumptionsData.outlook}</div>
+                </div>
+                
+                <div className="main-field-card">
+                  <div className="field-header">
+                    <div className="field-icon" style={{background: '#ef4444'}}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                      </svg>
+                    </div>
+                    <h3>Major NU-LRTP</h3>
+                  </div>
+                  <div className="field-value">{assumptionsData.majorNuLRTP}</div>
+                </div>
+              </div>
+              
+              {/* Two Graphs Side by Side */}
+              <div className="assumption-graphs-section">
+                <h2>Forecasting & Analysis</h2>
+                <div className="assumption-graphs-grid">
+                  {/* Graph 1: Power Flow */}
+                  <div className="assumption-graph-card">
+                    <div className="graph-header">
+                      <h3>Power Flow Analysis</h3>
+                      <select 
+                        value={powerFlowFuelType} 
+                        onChange={(e) => setPowerFlowFuelType(e.target.value)}
+                        className="graph-select"
+                      >
+                        {fuelTypes.map(fuel => (
+                          <option key={fuel} value={fuel.toLowerCase()}>{fuel}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="graph-content">
+                      <svg viewBox="0 0 400 250" className="bar-chart-svg">
+                        <line x1="40" y1="200" x2="380" y2="200" stroke="#e2e8f0" strokeWidth="2"/>
+                        {fuelTypes.slice(1).map((fuel, i) => {
+                          const height = 50 + Math.random() * 130;
+                          const x = 60 + i * 50;
+                          const colors = ['#fbbf24', '#60a5fa', '#94a3b8', '#1f2937', '#8b5cf6', '#10b981'];
+                          return (
+                            <g key={fuel}>
+                              <rect x={x} y={200 - height} width="40" height={height} fill={colors[i]} rx="3"/>
+                              <text x={x + 20} y={195 - height} fontSize="11" fontWeight="600" fill="#1e293b" textAnchor="middle">
+                                {(800 + Math.random() * 600).toFixed(0)}
+                              </text>
+                              <text x={x + 20} y="220" fontSize="10" fill="#64748b" textAnchor="middle">{fuel}</text>
+                            </g>
+                          );
+                        })}
+                        <text x="20" y="125" fontSize="12" fill="#64748b" textAnchor="middle" transform="rotate(-90 20 125)">MW</text>
+                      </svg>
+                    </div>
+                  </div>
+                  
+                  {/* Graph 2: LMP Forecasting */}
+                  <div className="assumption-graph-card">
+                    <div className="graph-header">
+                      <h3>LMP Forecasting</h3>
+                      <select 
+                        value={lmpFuelType} 
+                        onChange={(e) => setLmpFuelType(e.target.value)}
+                        className="graph-select"
+                      >
+                        {fuelTypes.map(fuel => (
+                          <option key={fuel} value={fuel.toLowerCase()}>{fuel}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="graph-content">
+                      <svg viewBox="0 0 400 250" className="bar-chart-svg">
+                        <line x1="40" y1="200" x2="380" y2="200" stroke="#e2e8f0" strokeWidth="2"/>
+                        {fuelTypes.slice(1).map((fuel, i) => {
+                          const height = 40 + Math.random() * 140;
+                          const x = 60 + i * 50;
+                          const colors = ['#fbbf24', '#60a5fa', '#94a3b8', '#1f2937', '#8b5cf6', '#10b981'];
+                          return (
+                            <g key={fuel}>
+                              <rect x={x} y={200 - height} width="40" height={height} fill={colors[i]} rx="3"/>
+                              <text x={x + 20} y={195 - height} fontSize="11" fontWeight="600" fill="#1e293b" textAnchor="middle">
+                                ${(25 + Math.random() * 50).toFixed(1)}
+                              </text>
+                              <text x={x + 20} y="220" fontSize="10" fill="#64748b" textAnchor="middle">{fuel}</text>
+                            </g>
+                          );
+                        })}
+                        <text x="20" y="125" fontSize="12" fill="#64748b" textAnchor="middle" transform="rotate(-90 20 125)">$/MWh</text>
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Containment Field */}
+              <div className="containment-section">
+                <h2>System Containment Parameters</h2>
+                <div className="containment-card">
+                  <div className="containment-grid">
+                    <div className="containment-item">
+                      <label>Thermal Limit (MW)</label>
+                      <input type="number" className="containment-input" defaultValue="200" />
+                    </div>
+                    <div className="containment-item">
+                      <label>Voltage Limit (kV)</label>
+                      <input type="number" className="containment-input" defaultValue="345" />
+                    </div>
+                    <div className="containment-item">
+                      <label>Stability Margin (%)</label>
+                      <input type="number" className="containment-input" defaultValue="15" />
+                    </div>
+                    <div className="containment-item">
+                      <label>N-1 Contingency</label>
+                      <select className="containment-select">
+                        <option value="enabled">Enabled</option>
+                        <option value="disabled">Disabled</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Assumptions Made Field (Admin Editable) */}
+              <div className="assumptions-made-section">
+                <h2>Assumptions Made (Admin Editable)</h2>
+                <div className="assumptions-made-card">
+                  <div className="assumptions-edit-grid">
+                    <div className="assumption-edit-item">
+                      <label className="edit-label">Model Selected</label>
+                      <input 
+                        type="text" 
+                        className="edit-input" 
+                        value={assumptionsData.model}
+                        onChange={(e) => setAssumptionsData({...assumptionsData, model: e.target.value})}
+                      />
+                    </div>
+                    
+                    <div className="assumption-edit-item">
+                      <label className="edit-label">Scenario</label>
+                      <select 
+                        className="edit-select" 
+                        value={assumptionsData.scenario}
+                        onChange={(e) => setAssumptionsData({...assumptionsData, scenario: e.target.value})}
+                      >
+                        <option value="Summer Peak Load">Summer Peak Load</option>
+                        <option value="Summer Off-Peak Load">Summer Off-Peak Load</option>
+                        <option value="Spring Light Load">Spring Light Load</option>
+                        <option value="Winter Peak Load">Winter Peak Load</option>
+                      </select>
+                    </div>
+                    
+                    <div className="assumption-edit-item">
+                      <label className="edit-label">Outlook</label>
+                      <input 
+                        type="text" 
+                        className="edit-input" 
+                        value={assumptionsData.outlook}
+                        onChange={(e) => setAssumptionsData({...assumptionsData, outlook: e.target.value})}
+                      />
+                    </div>
+                    
+                    <div className="assumption-edit-item">
+                      <label className="edit-label">Major NU-LRTP</label>
+                      <input 
+                        type="text" 
+                        className="edit-input" 
+                        value={assumptionsData.majorNuLRTP}
+                        onChange={(e) => setAssumptionsData({...assumptionsData, majorNuLRTP: e.target.value})}
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="assumptions-description">
+                    <label className="edit-label">Additional Notes</label>
+                    <textarea 
+                      className="edit-textarea" 
+                      rows="4" 
+                      defaultValue="Model based on latest ISO-NE CCIS 2028 build with updated LMP forecasts and constraint library. Includes renewable integration targets and demand response participation rates as per regional planning assumptions."
+                    ></textarea>
+                  </div>
+                </div>
+              </div>
             </div>
-
-            {/* Overview Tab */}
-            {activeResultsTab === 'overview' && (
-              <div className="overview-content">
-                <div className="metrics-grid">
-                  <div className="metric-card">
-                    <div className="metric-icon">⚡</div>
-                    <div className="metric-value">{formatPower(parseFloat(projections.systemMetrics.totalDemand))}</div>
-                    <div className="metric-label">Projected Demand</div>
-                  </div>
-                  <div className="metric-card">
-                    <div className="metric-icon">🔋</div>
-                    <div className="metric-value">{formatPower(parseFloat(projections.systemMetrics.totalGeneration))}</div>
-                    <div className="metric-label">Total Generation</div>
-                  </div>
-                  <div className="metric-card">
-                    <div className="metric-icon">📉</div>
-                    <div className="metric-value">{formatPower(parseFloat(projections.systemMetrics.totalLineLosses))}</div>
-                    <div className="metric-label">System Losses</div>
-                  </div>
-                  <div className="metric-card">
-                    <div className="metric-icon">💰</div>
-                    <div className="metric-value">{formatCurrency(parseFloat(projections.systemMetrics.averageLMP))}</div>
-                    <div className="metric-label">Avg LMP</div>
-                  </div>
-                  <div className="metric-card">
-                    <div className="metric-icon">✅</div>
-                    <div className="metric-value">{formatPercentage(parseFloat(projections.systemMetrics.reliabilityIndex) * 100)}</div>
-                    <div className="metric-label">Reliability Index</div>
-                  </div>
-                  <div className="metric-card">
-                    <div className="metric-icon">🌱</div>
-                    <div className="metric-value">{formatPercentage(projections.systemMetrics.renewablePercentage)}</div>
-                    <div className="metric-label">Renewable Penetration</div>
-                  </div>
-                </div>
-
-                <div className="assumptions-used">
-                  <h3>Analysis Assumptions</h3>
-                  <div className="assumptions-list">
-                    <div className="assumption-item">
-                      <span>Load Growth:</span>
-                      <strong>{assumptions.loadGrowth}% per year</strong>
-                    </div>
-                    <div className="assumption-item">
-                      <span>Demand Response:</span>
-                      <strong>{assumptions.demandResponse}% participation</strong>
-                    </div>
-                    <div className="assumption-item">
-                      <span>Renewable Integration:</span>
-                      <strong>{assumptions.renewableIntegration}%</strong>
-                    </div>
-                    <div className="assumption-item">
-                      <span>Time Horizon:</span>
-                      <strong>{assumptions.timeHorizon}</strong>
-                    </div>
-                    <div className="assumption-item">
-                      <span>Contingency:</span>
-                      <strong>{assumptions.contingency.toUpperCase()}</strong>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Buses Tab */}
-            {activeResultsTab === 'buses' && (
-              <div className="table-container">
-                <table className="results-table">
-                  <thead>
-                    <tr>
-                      <th>Bus ID</th>
-                      <th>Bus Name</th>
-                      <th>Voltage (kV)</th>
-                      <th>Current LMP</th>
-                      <th>Projected LMP</th>
-                      <th>Change (%)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {projections.buses.map(bus => (
-                      <tr key={bus.bus_id}>
-                        <td>{bus.bus_id}</td>
-                        <td>{bus.bus_name}</td>
-                        <td>{bus.voltage}</td>
-                        <td>{formatCurrency(bus.currentLMP)}</td>
-                        <td className="highlighted">{formatCurrency(bus.projectedLMP)}</td>
-                        <td className={bus.loadGrowth > 0 ? 'positive' : 'negative'}>
-                          {formatPercentage(bus.loadGrowth)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {/* Branches Tab */}
-            {activeResultsTab === 'branches' && (
-              <div className="table-container">
-                <table className="results-table">
-                  <thead>
-                    <tr>
-                      <th>From Bus</th>
-                      <th>To Bus</th>
-                      <th>Projected Flow (MW)</th>
-                      <th>Congestion Ratio</th>
-                      <th>Line Loss (MW)</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {projections.branches.map((branch, idx) => {
-                      const status = formatStatus(
-                        branch.congestionRatio > 0.85 ? 'Critical' : 'Normal'
-                      );
-                      return (
-                        <tr key={idx}>
-                          <td>{branch.from_bus}</td>
-                          <td>{branch.to_bus}</td>
-                          <td>{formatPower(branch.projectedFlow)}</td>
-                          <td>
-                            <span
-                              className="congestion-badge"
-                              style={{ backgroundColor: branch.congestionRatio > 0.85 ? '#ef4444' : '#10b981' }}
-                            >
-                              {formatPercentage(branch.congestionRatio * 100)}
-                            </span>
-                          </td>
-                          <td>{formatPower(branch.lineLoss)}</td>
-                          <td style={{ color: status.color }}>{status.text}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {/* Constraints Tab */}
-            {activeResultsTab === 'constraints' && (
-              <div className="constraints-content">
-                {projections.constraints.length === 0 ? (
-                  <div className="no-constraints">
-                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2">
-                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                      <polyline points="22 4 12 14.01 9 11.01"/>
-                    </svg>
-                    <h3>No Constraints Identified</h3>
-                    <p>System operates within acceptable limits under current assumptions</p>
-                  </div>
-                ) : (
-                  <div className="constraints-list">
-                    {projections.constraints.map((constraint, idx) => (
-                      <div key={idx} className={`constraint-card severity-${constraint.severity}`}>
-                        <div className="constraint-header">
-                          <span className={`severity-badge ${constraint.severity}`}>
-                            {constraint.severity.toUpperCase()}
-                          </span>
-                          <h4>{constraint.element}</h4>
-                        </div>
-                        <div className="constraint-body">
-                          <p><strong>Type:</strong> {constraint.type}</p>
-                          <p><strong>Threshold:</strong> {constraint.threshold}</p>
-                          <p><strong>Impact:</strong> {constraint.impact}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Recommendations Tab */}
-            {activeResultsTab === 'recommendations' && (
-              <div className="recommendations-content">
-                {projections.recommendations.map((rec, idx) => (
-                  <div key={idx} className={`recommendation-card priority-${rec.priority.toLowerCase()}`}>
-                    <div className="rec-header">
-                      <span className={`priority-badge ${rec.priority.toLowerCase()}`}>
-                        {rec.priority} Priority
-                      </span>
-                      <h4>{rec.action}</h4>
-                    </div>
-                    <div className="rec-body">
-                      <div className="rec-detail">
-                        <strong>Expected Impact:</strong>
-                        <p>{rec.impact}</p>
-                      </div>
-                      <div className="rec-meta">
-                        <span>💵 {rec.estimatedCost}</span>
-                        <span>⏱️ {rec.timeframe}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         )}
       </div>
