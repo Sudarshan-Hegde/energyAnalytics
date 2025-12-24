@@ -39,7 +39,7 @@ curl http://localhost:8000/grid-data/statistics
 
 ## Database
 
-The backend connects to `gridsense_iso_ne_sample.db` in the project root directory.
+The backend connects to `gridsense_iso_ne.db` in the project root directory.
 
 ## CORS
 

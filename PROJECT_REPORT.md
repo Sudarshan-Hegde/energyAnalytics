@@ -23,7 +23,7 @@ GridSense is a comprehensive power grid visualization and analysis platform that
 
 ### Backend Stack
 - **Framework:** Flask 3.0.0 (Python)
-- **Database:** SQLite (gridsense_iso_ne_sample.db)
+- **Database:** SQLite (gridsense_iso_ne.db)
 - **CORS:** Flask-CORS enabled for cross-origin requests
 - **Port:** localhost:8000
 
@@ -513,7 +513,7 @@ GridSense/
 │       └── powerFlowCalculations.js  # Analysis calculations
 ├── public/
 │   └── [static assets]
-├── gridsense_iso_ne_sample.db    # SQLite database
+├── gridsense_iso_ne.db    # SQLite database
 ├── package.json                  # NPM dependencies
 ├── vite.config.js                # Vite configuration
 ├── eslint.config.js              # Linting rules

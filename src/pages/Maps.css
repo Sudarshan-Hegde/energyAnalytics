@@ -1345,7 +1345,7 @@
 /* Map Search Control */
 .map-search-control {
   position: fixed;
-  top: 150px;
+  top: 210px;
   right: 20px;
   z-index: 1000;
 }
@@ -2289,13 +2289,16 @@
   justify-content: center;
   z-index: 10000;
   backdrop-filter: blur(4px);
+  padding: 8px;
 }
 
 .modal-content {
   background: #ffffff;
-  border-radius: 12px;
-  width: 95vw;
-  height: 95vh;
+  border-radius: 8px;
+  width: 100%;
+  height: 100%;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
   display: flex;
   flex-direction: column;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
@@ -2425,4 +2428,628 @@
   font-size: 16px;
   color: #1e293b;
   font-weight: 700;
+}
+
+/* ================================================================
+   MODERN CONSTRAINT MODAL - Written from Scratch
+   ================================================================ */
+.constraint-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(8px);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.constraint-modal-window {
+  width: 95vw;
+  max-width: 1600px;
+  height: 92vh;
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  border-radius: 20px;
+  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(59, 130, 246, 0.1);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: slideUp 0.3s ease-out;
+  position: relative;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Glassmorphic accent line at top */
+.constraint-modal-window::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #3b82f6, #8b5cf6, #3b82f6);
+  background-size: 200% 100%;
+  animation: shimmer 3s linear infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.constraint-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28px 32px;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(139, 92, 246, 0.03) 100%);
+  border-bottom: 1px solid rgba(59, 130, 246, 0.1);
+}
+
+.modal-header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.modal-icon-wrapper {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 16px rgba(59, 130, 246, 0.3);
+  position: relative;
+  overflow: hidden;
+}
+
+.modal-icon-wrapper::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.3) 0%, transparent 70%);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+.modal-icon-wrapper svg {
+  stroke: #ffffff;
+  position: relative;
+  z-index: 1;
+}
+
+.modal-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.5px;
+}
+
+.modal-subtitle {
+  margin: 4px 0 0 0;
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.constraint-modal-close {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.constraint-modal-close:hover {
+  background: #ef4444;
+  border-color: #dc2626;
+  transform: scale(1.05);
+}
+
+.constraint-modal-close:hover svg {
+  stroke: #ffffff;
+}
+
+.constraint-modal-close svg {
+  stroke: #ef4444;
+  transition: stroke 0.2s ease;
+}
+
+/* Modal Body */
+.constraint-modal-body {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 24px 32px;
+}
+
+/* Filters Section in Modal */
+.constraint-modal-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 20px;
+  padding: 24px;
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1px solid rgba(59, 130, 246, 0.1);
+  margin-bottom: 20px;
+}
+
+.constraint-modal-filters .filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.constraint-modal-filters .filter-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #475569;
+}
+
+/* Table Container */
+.constraint-table-wrapper {
+  flex: 1;
+  overflow: hidden;
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1px solid rgba(59, 130, 246, 0.1);
+  display: flex;
+  flex-direction: column;
+}
+
+.constraint-table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(139, 92, 246, 0.03) 100%);
+  border-bottom: 1px solid rgba(59, 130, 246, 0.1);
+}
+
+.constraint-row-count {
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.constraint-row-count strong {
+  color: #3b82f6;
+  font-weight: 700;
+}
+
+.constraint-table-scroll {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+}
+
+.constraint-table-modern {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.constraint-table-modern thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+}
+
+.constraint-table-modern thead th {
+  padding: 16px 20px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #ffffff;
+  white-space: nowrap;
+  border-bottom: 2px solid #3b82f6;
+}
+
+.constraint-table-modern tbody tr {
+  transition: all 0.2s ease;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+.constraint-table-modern tbody tr:hover {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.08) 0%, rgba(139, 92, 246, 0.05) 100%);
+  transform: translateX(4px);
+  box-shadow: inset 4px 0 0 #3b82f6;
+}
+
+.constraint-table-modern tbody td {
+  padding: 16px 20px;
+  font-size: 13px;
+  color: #1e293b;
+  white-space: nowrap;
+}
+
+.constraint-table-modern tbody td:first-child {
+  font-weight: 600;
+  color: #3b82f6;
+}
+
+/* Scenario Badge in Table */
+.scenario-badge-modern {
+  display: inline-block;
+  padding: 4px 12px;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+}
+
+/* Empty State */
+.constraint-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 40px;
+  color: #94a3b8;
+  text-align: center;
+}
+
+.constraint-empty-state svg {
+  margin-bottom: 24px;
+  opacity: 0.5;
+}
+
+.constraint-empty-state p {
+  font-size: 15px;
+  color: #64748b;
+  margin: 8px 0;
+}
+
+/* ================================================================
+   MODERN DASHBOARD MODAL - Written from Scratch
+   ================================================================ */
+.dashboard-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(8px);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.dashboard-modal-window {
+  width: 95vw;
+  max-width: 1800px;
+  height: 92vh;
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  border-radius: 20px;
+  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(16, 185, 129, 0.1);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: slideUp 0.3s ease-out;
+  position: relative;
+}
+
+/* Glassmorphic accent line at top - green theme */
+.dashboard-modal-window::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #10b981, #3b82f6, #10b981);
+  background-size: 200% 100%;
+  animation: shimmer 3s linear infinite;
+}
+
+.dashboard-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28px 32px;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.05) 0%, rgba(59, 130, 246, 0.03) 100%);
+  border-bottom: 1px solid rgba(16, 185, 129, 0.1);
+}
+
+.dashboard-icon {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  box-shadow: 0 8px 16px rgba(16, 185, 129, 0.3);
+}
+
+.dashboard-modal-close {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.dashboard-modal-close:hover {
+  background: #ef4444;
+  border-color: #dc2626;
+  transform: scale(1.05);
+}
+
+.dashboard-modal-close:hover svg {
+  stroke: #ffffff;
+}
+
+.dashboard-modal-close svg {
+  stroke: #ef4444;
+  transition: stroke 0.2s ease;
+}
+
+/* Dashboard Body */
+.dashboard-modal-body {
+  flex: 1;
+  overflow: auto;
+  padding: 24px 32px;
+}
+
+.dashboard-grid-modern {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+  gap: 24px;
+  padding-bottom: 24px;
+}
+
+/* Dashboard Cards */
+.dashboard-card-modern {
+  background: #ffffff;
+  border: 1px solid rgba(16, 185, 129, 0.15);
+  border-radius: 16px;
+  padding: 28px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.dashboard-card-modern::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #10b981, #3b82f6);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.dashboard-card-modern:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.dashboard-card-modern:hover::before {
+  opacity: 1;
+}
+
+.dashboard-card-modern.large-card {
+  grid-column: span 2;
+}
+
+.dashboard-card-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 24px 0;
+  font-size: 18px;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.3px;
+}
+
+.dashboard-card-title svg {
+  flex-shrink: 0;
+}
+
+/* Stats Grid */
+.stats-grid-modern {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.stat-card-modern {
+  padding: 20px;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(139, 92, 246, 0.03) 100%);
+  border: 1px solid rgba(59, 130, 246, 0.1);
+  border-radius: 12px;
+  text-align: center;
+  transition: all 0.2s ease;
+}
+
+.stat-card-modern:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.stat-label-modern {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #64748b;
+  margin-bottom: 8px;
+}
+
+.stat-value-modern {
+  display: block;
+  font-size: 28px;
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.stat-change-modern {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.stat-change-modern.positive {
+  color: #10b981;
+}
+
+.stat-change-modern.negative {
+  color: #ef4444;
+}
+
+/* Chart Containers */
+.chart-container-modern {
+  margin-top: 20px;
+  padding: 16px;
+  background: rgba(248, 250, 252, 0.5);
+  border-radius: 8px;
+}
+
+.chart-title-modern {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #64748b;
+  margin-bottom: 16px;
+}
+
+/* Loading State for Modal */
+.modal-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 120px 40px;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.modal-loading-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid rgba(59, 130, 246, 0.1);
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.modal-loading-text {
+  font-size: 14px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+/* Scrollbar Styling for Modals */
+.constraint-table-scroll::-webkit-scrollbar,
+.dashboard-modal-body::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.constraint-table-scroll::-webkit-scrollbar-track,
+.dashboard-modal-body::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+.constraint-table-scroll::-webkit-scrollbar-thumb,
+.dashboard-modal-body::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+
+.constraint-table-scroll::-webkit-scrollbar-thumb:hover,
+.dashboard-modal-body::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1200px) {
+  .constraint-modal-window,
+  .dashboard-modal-window {
+    width: 96vw;
+    height: 94vh;
+  }
+  
+  .dashboard-grid-modern {
+    grid-template-columns: 1fr;
+  }
+  
+  .dashboard-card-modern.large-card {
+    grid-column: span 1;
+  }
 }

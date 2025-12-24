@@ -1,4 +1,4 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 import sqlite3
 import os
@@ -7,7 +7,7 @@ app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
 # Database path
-DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'gridsense_iso_ne_sample.db')
+DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'gridsense_iso_ne.db')
 
 def get_db_connection():
     """Create a database connection"""
@@ -367,11 +367,236 @@ def get_statistics():
             'error': str(e)
         }), 500
 
+@app.route('/grid-data/future-outlook/substation-upgrades', methods=['GET'])
+def get_substation_upgrades():
+    """Get ISO-NE approved substation upgrades for future outlook"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        query = """
+            SELECT 
+                "Substation Upgrade" as name,
+                "Expected In-service Year" as year,
+                Category as category,
+                Longitude as longitude,
+                Latitude as latitude
+            FROM "ISO-NE approved Substation Upgrades"
+            WHERE Latitude IS NOT NULL 
+            AND Longitude IS NOT NULL
+            ORDER BY "Expected In-service Year"
+        """
+        
+        cursor.execute(query)
+        rows = cursor.fetchall()
+        
+        upgrades = [dict_from_row(row) for row in rows]
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'count': len(upgrades),
+            'data': upgrades
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/grid-data/future-outlook/transmission-upgrades', methods=['GET'])
+def get_transmission_upgrades():
+    """Get ISO-NE approved transmission upgrades for future outlook"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        query = """
+            SELECT 
+                "Transmission Upgrade" as name,
+                "Expected In-service Year" as year,
+                Category as category,
+                "From Longitude" as from_longitude,
+                "From Latitude" as from_latitude,
+                "To Longitude" as to_longitude,
+                "To Latitude" as to_latitude
+            FROM "ISO-NE approved Transmission Upgrades"
+            WHERE "From Latitude" IS NOT NULL 
+            AND "From Longitude" IS NOT NULL
+            AND "To Latitude" IS NOT NULL
+            AND "To Longitude" IS NOT NULL
+            ORDER BY "Expected In-service Year"
+        """
+        
+        cursor.execute(query)
+        rows = cursor.fetchall()
+        
+        upgrades = [dict_from_row(row) for row in rows]
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'count': len(upgrades),
+            'data': upgrades
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/grid-data/scenarios', methods=['GET'])
+def get_scenarios():
+    """Get list of all available constraint scenarios"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Get all constraint tables
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'Constraints ISO-NE%'")
+        tables = cursor.fetchall()
+        
+        scenarios = []
+        for table in tables:
+            table_name = table[0]
+            # Parse scenario name from table name
+            # Format: "Constraints ISO-NE {Season} {Load} {Type} {Direction}"
+            parts = table_name.replace('Constraints ISO-NE ', '').split()
+            scenarios.append({
+                'id': table_name,
+                'name': table_name.replace('Constraints ISO-NE ', ''),
+                'table': table_name
+            })
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'count': len(scenarios),
+            'data': scenarios
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/grid-data/constraints', methods=['GET'])
+def get_constraints():
+    """Get constraint data for selected scenarios"""
+    try:
+        scenarios = request.args.getlist('scenarios[]')
+        constraint_type = request.args.get('type', 'both')  # both, substation, branch
+        search_bus = request.args.get('search', '')
+        
+        if not scenarios:
+            return jsonify({
+                'success': False,
+                'error': 'No scenarios selected'
+            }), 400
+        
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        all_constraints = []
+        
+        for scenario in scenarios:
+            # Validate table name to prevent SQL injection
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (scenario,))
+            if not cursor.fetchone():
+                continue
+            
+            query = f'SELECT * FROM "{scenario}"'
+            params = []
+            
+            # Add search filter if provided
+            if search_bus:
+                query += ' WHERE Source LIKE ? OR Sink LIKE ? OR "Monitored Facility" LIKE ?'
+                search_param = f'%{search_bus}%'
+                params = [search_param, search_param, search_param]
+            
+            query += ' LIMIT 500'  # Limit results for performance
+            
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            
+            for row in rows:
+                constraint = dict_from_row(row)
+                constraint['scenario'] = scenario.replace('Constraints ISO-NE ', '')
+                all_constraints.append(constraint)
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'count': len(all_constraints),
+            'data': all_constraints
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/grid-data/substation-types', methods=['GET'])
+def get_substation_types():
+    """Get distinct substation types from the database"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Query for distinct bus names with their voltage levels
+        query = """
+            SELECT DISTINCT 
+                bus_name,
+                nominal_voltage
+            FROM buses
+            WHERE bus_name IS NOT NULL 
+            AND nominal_voltage IS NOT NULL
+            ORDER BY nominal_voltage DESC, bus_name
+        """
+        
+        cursor.execute(query)
+        rows = cursor.fetchall()
+        
+        # Format as "Bus Name - Voltage"
+        substations = [
+            {
+                'id': f"{row['bus_name']}_{row['nominal_voltage']}",
+                'label': f"{row['bus_name']} - {row['nominal_voltage']}kV",
+                'name': row['bus_name'],
+                'voltage': row['nominal_voltage']
+            }
+            for row in rows
+        ]
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'count': len(substations),
+            'data': substations
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 if __name__ == '__main__':
     # Check if database exists
     if not os.path.exists(DB_PATH):
         print(f"ERROR: Database not found at {DB_PATH}")
-        print("Please ensure gridsense_iso_ne_sample.db exists in the project root")
+        print("Please ensure gridsense_iso_ne.db exists in the project root")
         exit(1)
     
     print(f"Starting GridSense Backend API...")

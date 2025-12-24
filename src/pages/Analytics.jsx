@@ -1,483 +1,1285 @@
 import { useState, useEffect } from 'react';
-import ReactECharts from 'echarts-for-react';
 import './Analytics.css';
-import useEconomicData from '../hooks/useEconomicData';
 
 const Analytics = () => {
-  const [timeRange, setTimeRange] = useState('24h');
-  const [selectedMetric, setSelectedMetric] = useState('power');
-
-  // Fetch real economic data
-  const {
-    historicalLMP,
-    zoneEfficiency,
-    avgForecast,
-    statistics,
-    loading: dataLoading,
-    error: dataError
-  } = useEconomicData();
-
-  // Historical LMP chart (replaces power consumption)
-  const getLMPHistoryOption = () => {
-    if (historicalLMP.length === 0) {
-      return null;
-    }
-
-    const years = historicalLMP.map(d => d.year);
-    const values = historicalLMP.map(d => d.value);
-
-    return {
-      backgroundColor: 'transparent',
-      tooltip: {
-        trigger: 'axis',
-        backgroundColor: 'rgba(26, 26, 46, 0.95)',
-        borderColor: '#00d4ff',
-        borderWidth: 1,
-        textStyle: { color: '#fff' },
-        formatter: (params) => {
-          const param = params[0];
-          return `${param.name}<br/>Avg LMP: $${param.value.toFixed(2)}/MWh`;
-        }
-      },
-      grid: {
-        left: '3%',
-        right: '4%',
-        bottom: '3%',
-        containLabel: true
-      },
-      xAxis: {
-        type: 'category',
-        data: years,
-        axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.2)' } },
-        axisLabel: { color: 'rgba(255, 255, 255, 0.6)' }
-      },
-      yAxis: {
-        type: 'value',
-        name: '$/MWh',
-        nameTextStyle: { color: 'rgba(255, 255, 255, 0.6)' },
-        axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.2)' } },
-        axisLabel: { color: 'rgba(255, 255, 255, 0.6)' },
-        splitLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.1)' } }
-      },
-      series: [{
-        name: 'LMP',
-        type: 'line',
-        smooth: true,
-        data: values,
-        areaStyle: {
-          color: {
-            type: 'linear',
-            x: 0, y: 0, x2: 0, y2: 1,
-            colorStops: [
-              { offset: 0, color: 'rgba(0, 212, 255, 0.4)' },
-              { offset: 1, color: 'rgba(0, 212, 255, 0.05)' }
-            ]
-          }
-        },
-        lineStyle: { color: '#00d4ff', width: 2 },
-        itemStyle: { color: '#00d4ff' }
-      }]
-    };
+  const [activeFuelTab, setActiveFuelTab] = useState('Coal');
+  const [showAddFuelModal, setShowAddFuelModal] = useState(false);
+  const [newFuelType, setNewFuelType] = useState('');
+  
+  // Dashboard panels configuration with dimensions (2x2 grid layout)
+  const [panels, setPanels] = useState([
+    { id: 1, chartType: null, dataSource: null, title: 'Panel 1', width: 50, height: 50, row: 0, col: 0 },
+    { id: 2, chartType: null, dataSource: null, title: 'Panel 2', width: 50, height: 50, row: 0, col: 1 },
+    { id: 3, chartType: null, dataSource: null, title: 'Panel 3', width: 50, height: 50, row: 1, col: 0 },
+    { id: 4, chartType: null, dataSource: null, title: 'Panel 4', width: 50, height: 50, row: 1, col: 1 }
+  ]);
+  
+  // Resizable panel state
+  const [resizing, setResizing] = useState(null); // { panelId, edge, startX, startY, startWidth, startHeight }
+  const [containerRect, setContainerRect] = useState(null);
+  
+  // Fuel types
+  const [fuelTypes, setFuelTypes] = useState([
+    'Coal', 'Natural Gas', 'Nuclear', 'Hydro', 'Wind', 'Solar', 'Biomass'
+  ]);
+  
+  // Chart configuration modal
+  const [activePanel, setActivePanel] = useState(null);
+  const [showConfigModal, setShowConfigModal] = useState(false);
+  
+  // Available chart types
+  const chartTypes = [
+    { id: 'bar', name: 'Bar Chart', icon: '📊', supportsSecondaryAxis: true },
+    { id: 'line', name: 'Line Chart', icon: '📈', supportsSecondaryAxis: true },
+    { id: 'pie', name: 'Pie Chart', icon: '🥧', supportsSecondaryAxis: false },
+    { id: 'area', name: 'Area Chart', icon: '📉', supportsSecondaryAxis: true },
+    { id: 'scatter', name: 'Scatter Plot', icon: '⚫', supportsSecondaryAxis: true },
+    { id: 'table', name: 'Data Table', icon: '📋', supportsSecondaryAxis: false },
+    { id: 'gauge', name: 'Gauge', icon: '⏱️', supportsSecondaryAxis: false },
+    { id: 'map', name: 'Heat Map', icon: '🗺️', supportsSecondaryAxis: false },
+    { id: 'combo', name: 'Combo Chart', icon: '📊📈', supportsSecondaryAxis: true }
+  ];
+  
+  // Available data sources (Database tables/views)
+  const dataSources = [
+    'LMP Historical Data',
+    'Generation by Fuel Type',
+    'Load Forecast',
+    'Capacity Utilization',
+    'Efficiency Metrics',
+    'Cost Analysis',
+    'Emissions Data',
+    'Real-time Power Flow'
+  ];
+  
+  // Available database fields for configuration
+  const availableFields = {
+    dimensions: [
+      { id: 'bus_id', name: 'Bus ID', table: 'buses', type: 'categorical' },
+      { id: 'bus_name', name: 'Bus Name', table: 'buses', type: 'categorical' },
+      { id: 'state', name: 'State', table: 'buses', type: 'categorical' },
+      { id: 'county', name: 'County', table: 'buses', type: 'categorical' },
+      { id: 'voltage', name: 'Voltage Level', table: 'buses', type: 'categorical' },
+      { id: 'fuel_type', name: 'Fuel Type', table: 'generators', type: 'categorical' },
+      { id: 'generator_name', name: 'Generator Name', table: 'generators', type: 'categorical' },
+      { id: 'date', name: 'Date', table: 'all', type: 'temporal' },
+      { id: 'year', name: 'Year', table: 'all', type: 'temporal' },
+      { id: 'month', name: 'Month', table: 'all', type: 'temporal' },
+      { id: 'hour', name: 'Hour', table: 'all', type: 'temporal' },
+      { id: 'scenario', name: 'Scenario', table: 'constraints', type: 'categorical' },
+      { id: 'status', name: 'Status', table: 'branches', type: 'categorical' }
+    ],
+    measures: [
+      { id: 'lmp_2024', name: 'LMP 2024', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
+      { id: 'lmp_2023', name: 'LMP 2023', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
+      { id: 'capacity_mw', name: 'Capacity (MW)', table: 'generators', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
+      { id: 'generation_mw', name: 'Generation (MW)', table: 'generators', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
+      { id: 'load_mw', name: 'Load (MW)', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
+      { id: 'short_circuit', name: 'Short Circuit (MVA)', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
+      { id: 'power_flow', name: 'Power Flow (MW)', table: 'branches', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
+      { id: 'efficiency', name: 'Efficiency (%)', table: 'generators', type: 'numeric', aggregation: ['avg', 'min', 'max'] },
+      { id: 'utilization', name: 'Utilization (%)', table: 'generators', type: 'numeric', aggregation: ['avg', 'min', 'max'] },
+      { id: 'emissions', name: 'Emissions (tons)', table: 'generators', type: 'numeric', aggregation: ['sum', 'avg'] },
+      { id: 'cost', name: 'Cost ($)', table: 'all', type: 'numeric', aggregation: ['sum', 'avg', 'min', 'max'] },
+      { id: 'count', name: 'Count', table: 'all', type: 'numeric', aggregation: ['count'] }
+    ]
   };
-
-  // Real-time power consumption chart (kept for non-economic data)
-  const getPowerConsumptionOption = () => {
-    const hours = Array.from({ length: 24 }, (_, i) => `${i}:00`);
-    const data = hours.map(() => Math.random() * 500 + 800);
-
-    return {
-      backgroundColor: 'transparent',
-      tooltip: {
-        trigger: 'axis',
-        backgroundColor: 'rgba(26, 26, 46, 0.95)',
-        borderColor: '#00d4ff',
-        borderWidth: 1,
-        textStyle: { color: '#fff' }
-      },
-      grid: {
-        left: '3%',
-        right: '4%',
-        bottom: '3%',
-        containLabel: true
-      },
-      xAxis: {
-        type: 'category',
-        data: hours,
-        axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.2)' } },
-        axisLabel: { color: 'rgba(255, 255, 255, 0.6)' }
-      },
-      yAxis: {
-        type: 'value',
-        name: 'MW',
-        nameTextStyle: { color: 'rgba(255, 255, 255, 0.6)' },
-        axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.2)' } },
-        axisLabel: { color: 'rgba(255, 255, 255, 0.6)' },
-        splitLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.1)' } }
-      },
-      series: [{
-        name: 'Power',
-        type: 'line',
-        smooth: true,
-        data: data,
-        areaStyle: {
-          color: {
-            type: 'linear',
-            x: 0, y: 0, x2: 0, y2: 1,
-            colorStops: [
-              { offset: 0, color: 'rgba(0, 212, 255, 0.4)' },
-              { offset: 1, color: 'rgba(0, 212, 255, 0.05)' }
-            ]
-          }
-        },
-        lineStyle: { color: '#00d4ff', width: 2 },
-        itemStyle: { color: '#00d4ff' }
-      }]
-    };
-  };
-
-  // Grid efficiency by zone - using real data
-  const getEfficiencyOption = () => {
-    if (zoneEfficiency.length === 0) {
-      return null;
-    }
-
-    const colors = ['#00d4ff', '#4caf50', '#ffc107', '#9c27b0', '#ff5722', '#3b82f6', '#10b981'];
-    const data = zoneEfficiency.slice(0, 7).map((zone, index) => ({
-      value: zone.efficiency,
-      name: zone.zone,
-      itemStyle: { color: colors[index % colors.length] }
-    }));
-
-    return {
-      backgroundColor: 'transparent',
-      tooltip: {
-        trigger: 'item',
-        backgroundColor: 'rgba(26, 26, 46, 0.95)',
-        borderColor: '#00d4ff',
-        borderWidth: 1,
-        textStyle: { color: '#fff' },
-        formatter: (params) => {
-          return `${params.name}<br/>Efficiency: ${params.value.toFixed(1)}%`;
-        }
-      },
-      legend: {
-        bottom: '5%',
-        left: 'center',
-        textStyle: { color: 'rgba(255, 255, 255, 0.8)' }
-      },
-      series: [{
-        name: 'Efficiency',
-        type: 'pie',
-        radius: ['40%', '70%'],
-        avoidLabelOverlap: false,
-        itemStyle: {
-          borderRadius: 10,
-          borderColor: '#0f0f1e',
-          borderWidth: 2
-        },
-        label: {
-          show: false,
-          position: 'center'
-        },
-        emphasis: {
-          label: {
-            show: true,
-            fontSize: 20,
-            fontWeight: 'bold',
-            color: '#fff',
-            formatter: '{b}\n{d}%'
-          }
-        },
-        labelLine: { show: false },
-        data: data
-      }]
-    };
-  };
-
-  // Load distribution
-  const getLoadDistributionOption = () => {
-    const substations = ['Sub-A', 'Sub-B', 'Sub-C', 'Sub-D', 'Sub-E', 'Sub-F'];
-    const loads = [87, 92, 78, 98, 65, 83];
-
-    return {
-      backgroundColor: 'transparent',
-      tooltip: {
-        trigger: 'axis',
-        backgroundColor: 'rgba(26, 26, 46, 0.95)',
-        borderColor: '#00d4ff',
-        borderWidth: 1,
-        textStyle: { color: '#fff' },
-        axisPointer: { type: 'shadow' }
-      },
-      grid: {
-        left: '3%',
-        right: '4%',
-        bottom: '3%',
-        containLabel: true
-      },
-      xAxis: {
-        type: 'category',
-        data: substations,
-        axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.2)' } },
-        axisLabel: { color: 'rgba(255, 255, 255, 0.6)' }
-      },
-      yAxis: {
-        type: 'value',
-        name: 'Load %',
-        max: 100,
-        nameTextStyle: { color: 'rgba(255, 255, 255, 0.6)' },
-        axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.2)' } },
-        axisLabel: { color: 'rgba(255, 255, 255, 0.6)' },
-        splitLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.1)' } }
-      },
-      series: [{
-        name: 'Load',
-        type: 'bar',
-        data: loads.map(value => ({
-          value,
-          itemStyle: {
-            color: value > 95 ? '#f44336' : value > 85 ? '#ffc107' : '#4caf50'
-          }
-        })),
-        barWidth: '60%',
-        itemStyle: {
-          borderRadius: [4, 4, 0, 0]
-        }
-      }]
-    };
-  };
-
-  // Forecast chart - using real forecast data
-  const getForecastOption = () => {
-    if (historicalLMP.length === 0 || !avgForecast.base) {
-      return null;
-    }
-
-    const years = historicalLMP.map(d => d.year);
-    const actualData = historicalLMP.map(d => d.value);
+  
+  // Panel configuration state (Power BI style)
+  const [panelConfig, setPanelConfig] = useState({
+    chartType: null,
+    dataSource: null,
+    xAxis: null,
+    primaryYAxis: [],
+    secondaryYAxis: [],
+    legend: null,
+    filters: [],
+    aggregations: {},
+    sorting: { field: null, order: 'asc' },
+    colorScheme: 'default',
+    showDataLabels: false,
+    showGridLines: true
+  });
+  
+  // Generate sample data based on configuration
+  const generateSampleData = (config) => {
+    if (!config || !config.xAxis || config.primaryYAxis.length === 0) return [];
     
-    // Extend with forecast for next year
-    const forecastYears = [...years, '2026'];
-    const forecastData = [...actualData, avgForecast.base];
-    const highData = [...actualData, avgForecast.high];
-    const lowData = [...actualData, avgForecast.low];
-
-    return {
-      backgroundColor: 'transparent',
-      tooltip: {
-        trigger: 'axis',
-        backgroundColor: 'rgba(26, 26, 46, 0.95)',
-        borderColor: '#00d4ff',
-        borderWidth: 1,
-        textStyle: { color: '#fff' },
-        formatter: (params) => {
-          let result = `${params[0].name}<br/>`;
-          params.forEach(param => {
-            result += `${param.marker}${param.seriesName}: $${param.value.toFixed(2)}/MWh<br/>`;
-          });
-          return result;
-        }
-      },
-      legend: {
-        data: ['Actual', 'Base Forecast', 'High Case', 'Low Case'],
-        top: '5%',
-        textStyle: { color: 'rgba(255, 255, 255, 0.8)' }
-      },
-      grid: {
-        left: '3%',
-        right: '4%',
-        bottom: '3%',
-        containLabel: true
-      },
-      xAxis: {
-        type: 'category',
-        data: forecastYears,
-        axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.2)' } },
-        axisLabel: { color: 'rgba(255, 255, 255, 0.6)' }
-      },
-      yAxis: {
-        type: 'value',
-        name: '$/MWh',
-        nameTextStyle: { color: 'rgba(255, 255, 255, 0.6)' },
-        axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.2)' } },
-        axisLabel: { color: 'rgba(255, 255, 255, 0.6)' },
-        splitLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.1)' } }
-      },
-      series: [
-        {
-          name: 'Actual',
-          type: 'line',
-          data: actualData,
-          smooth: true,
-          lineStyle: { color: '#00d4ff', width: 2 },
-          itemStyle: { color: '#00d4ff' }
-        },
-        {
-          name: 'Base Forecast',
-          type: 'line',
-          data: forecastData,
-          smooth: true,
-          lineStyle: { 
-            color: '#9c27b0', 
-            width: 2,
-            type: 'dashed'
-          },
-          itemStyle: { color: '#9c27b0' }
-        },
-        {
-          name: 'High Case',
-          type: 'line',
-          data: highData,
-          smooth: true,
-          lineStyle: { 
-            color: '#ef4444', 
-            width: 1.5,
-            type: 'dotted'
-          },
-          itemStyle: { color: '#ef4444' }
-        },
-        {
-          name: 'Low Case',
-          type: 'line',
-          data: lowData,
-          smooth: true,
-          lineStyle: { 
-            color: '#10b981', 
-            width: 1.5,
-            type: 'dotted'
-          },
-          itemStyle: { color: '#10b981' }
-        }
-      ]
-    };
+    const categories = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'];
+    return categories.map(cat => {
+      const dataPoint = { category: cat };
+      config.primaryYAxis.forEach(field => {
+        dataPoint[field.id] = Math.floor(Math.random() * 1000) + 200;
+      });
+      config.secondaryYAxis.forEach(field => {
+        dataPoint[field.id] = Math.floor(Math.random() * 100) + 10;
+      });
+      return dataPoint;
+    });
   };
-
-  // Show loading state
-  if (dataLoading) {
+  
+  // Render chart based on configuration
+  const renderChart = (panel) => {
+    if (!panel.config || !panel.config.chartType || !panel.config.xAxis || panel.config.primaryYAxis.length === 0) {
+      return (
+        <div className="panel-placeholder">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="2">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          <p>Click configure to add a visualization</p>
+        </div>
+      );
+    }
+    
+    const config = panel.config;
+    const data = generateSampleData(config);
+    const chartType = config.chartType;
+    
+    // Color schemes
+    const colors = {
+      default: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'],
+      cool: ['#0ea5e9', '#06b6d4', '#14b8a6', '#10b981', '#84cc16'],
+      warm: ['#ef4444', '#f97316', '#f59e0b', '#eab308', '#84cc16'],
+      professional: ['#1e40af', '#7c3aed', '#db2777', '#dc2626', '#ea580c']
+    };
+    
+    const colorPalette = colors[config.colorScheme] || colors.default;
+    
+    // Bar Chart
+    if (chartType === 'bar') {
+      const maxValue = Math.max(...data.flatMap(d => 
+        config.primaryYAxis.map(f => d[f.id] || 0)
+      ));
+      const chartHeight = 200;
+      const chartWidth = 450;
+      const barWidth = chartWidth / (data.length * config.primaryYAxis.length + data.length + 1);
+      const padding = { top: 20, right: 40, bottom: 40, left: 50 };
+      
+      return (
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`}>
+          {/* Grid lines */}
+          {config.showGridLines && [0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
+            <g key={i}>
+              <line 
+                x1={padding.left} 
+                y1={padding.top + chartHeight * ratio}
+                x2={padding.left + chartWidth} 
+                y2={padding.top + chartHeight * ratio}
+                stroke="#e5e7eb" 
+                strokeWidth="1"
+              />
+              <text 
+                x={padding.left - 10} 
+                y={padding.top + chartHeight * ratio + 4}
+                textAnchor="end"
+                fontSize="10"
+                fill="#6b7280"
+              >
+                {Math.round(maxValue * (1 - ratio))}
+              </text>
+            </g>
+          ))}
+          
+          {/* Bars */}
+          {data.map((d, i) => (
+            <g key={i}>
+              {config.primaryYAxis.map((field, j) => {
+                const value = d[field.id] || 0;
+                const barHeight = (value / maxValue) * chartHeight;
+                const x = padding.left + (i * (config.primaryYAxis.length * barWidth + barWidth)) + (j * barWidth) + barWidth / 2;
+                const y = padding.top + chartHeight - barHeight;
+                
+                return (
+                  <g key={field.id}>
+                    <rect
+                      x={x}
+                      y={y}
+                      width={barWidth * 0.8}
+                      height={barHeight}
+                      fill={colorPalette[j % colorPalette.length]}
+                      rx="2"
+                    />
+                    {config.showDataLabels && (
+                      <text
+                        x={x + barWidth * 0.4}
+                        y={y - 5}
+                        textAnchor="middle"
+                        fontSize="9"
+                        fill="#374151"
+                        fontWeight="500"
+                      >
+                        {value}
+                      </text>
+                    )}
+                  </g>
+                );
+              })}
+              {/* X-axis labels */}
+              <text
+                x={padding.left + (i * (config.primaryYAxis.length * barWidth + barWidth)) + (config.primaryYAxis.length * barWidth) / 2}
+                y={padding.top + chartHeight + 20}
+                textAnchor="middle"
+                fontSize="11"
+                fill="#374151"
+              >
+                {d.category}
+              </text>
+            </g>
+          ))}
+          
+          {/* Axis labels */}
+          <text x={padding.left + chartWidth / 2} y={padding.top + chartHeight + 35} textAnchor="middle" fontSize="12" fill="#1f2937" fontWeight="600">
+            {config.xAxis.name}
+          </text>
+          <text x={20} y={padding.top + chartHeight / 2} textAnchor="middle" fontSize="12" fill="#1f2937" fontWeight="600" transform={`rotate(-90 20 ${padding.top + chartHeight / 2})`}>
+            {config.primaryYAxis[0].name}
+          </text>
+        </svg>
+      );
+    }
+    
+    // Line Chart
+    if (chartType === 'line') {
+      const maxValue = Math.max(...data.flatMap(d => 
+        config.primaryYAxis.map(f => d[f.id] || 0)
+      ));
+      const chartHeight = 200;
+      const chartWidth = 450;
+      const padding = { top: 20, right: 40, bottom: 40, left: 50 };
+      const pointSpacing = chartWidth / (data.length - 1);
+      
+      return (
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`}>
+          {/* Grid lines */}
+          {config.showGridLines && [0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
+            <g key={i}>
+              <line 
+                x1={padding.left} 
+                y1={padding.top + chartHeight * ratio}
+                x2={padding.left + chartWidth} 
+                y2={padding.top + chartHeight * ratio}
+                stroke="#e5e7eb" 
+                strokeWidth="1"
+              />
+              <text 
+                x={padding.left - 10} 
+                y={padding.top + chartHeight * ratio + 4}
+                textAnchor="end"
+                fontSize="10"
+                fill="#6b7280"
+              >
+                {Math.round(maxValue * (1 - ratio))}
+              </text>
+            </g>
+          ))}
+          
+          {/* Lines and points */}
+          {config.primaryYAxis.map((field, j) => {
+            const points = data.map((d, i) => {
+              const x = padding.left + i * pointSpacing;
+              const value = d[field.id] || 0;
+              const y = padding.top + chartHeight - (value / maxValue) * chartHeight;
+              return `${x},${y}`;
+            }).join(' ');
+            
+            return (
+              <g key={field.id}>
+                <polyline
+                  points={points}
+                  fill="none"
+                  stroke={colorPalette[j % colorPalette.length]}
+                  strokeWidth="2.5"
+                  strokeLinejoin="round"
+                />
+                {data.map((d, i) => {
+                  const x = padding.left + i * pointSpacing;
+                  const value = d[field.id] || 0;
+                  const y = padding.top + chartHeight - (value / maxValue) * chartHeight;
+                  return (
+                    <g key={i}>
+                      <circle
+                        cx={x}
+                        cy={y}
+                        r="4"
+                        fill={colorPalette[j % colorPalette.length]}
+                        stroke="white"
+                        strokeWidth="2"
+                      />
+                      {config.showDataLabels && (
+                        <text
+                          x={x}
+                          y={y - 10}
+                          textAnchor="middle"
+                          fontSize="9"
+                          fill="#374151"
+                          fontWeight="500"
+                        >
+                          {value}
+                        </text>
+                      )}
+                    </g>
+                  );
+                })}
+              </g>
+            );
+          })}
+          
+          {/* X-axis labels */}
+          {data.map((d, i) => (
+            <text
+              key={i}
+              x={padding.left + i * pointSpacing}
+              y={padding.top + chartHeight + 20}
+              textAnchor="middle"
+              fontSize="11"
+              fill="#374151"
+            >
+              {d.category}
+            </text>
+          ))}
+          
+          {/* Axis labels */}
+          <text x={padding.left + chartWidth / 2} y={padding.top + chartHeight + 35} textAnchor="middle" fontSize="12" fill="#1f2937" fontWeight="600">
+            {config.xAxis.name}
+          </text>
+          <text x={20} y={padding.top + chartHeight / 2} textAnchor="middle" fontSize="12" fill="#1f2937" fontWeight="600" transform={`rotate(-90 20 ${padding.top + chartHeight / 2})`}>
+            {config.primaryYAxis[0].name}
+          </text>
+        </svg>
+      );
+    }
+    
+    // Pie Chart
+    if (chartType === 'pie') {
+      const total = data.reduce((sum, d) => sum + (d[config.primaryYAxis[0].id] || 0), 0);
+      const cx = 250;
+      const cy = 140;
+      const radius = 100;
+      let currentAngle = -90;
+      
+      return (
+        <svg width="100%" height="100%" viewBox="0 0 500 280">
+          {data.map((d, i) => {
+            const value = d[config.primaryYAxis[0].id] || 0;
+            const percentage = value / total;
+            const angle = percentage * 360;
+            
+            const startAngle = (currentAngle * Math.PI) / 180;
+            const endAngle = ((currentAngle + angle) * Math.PI) / 180;
+            
+            const x1 = cx + radius * Math.cos(startAngle);
+            const y1 = cy + radius * Math.sin(startAngle);
+            const x2 = cx + radius * Math.cos(endAngle);
+            const y2 = cy + radius * Math.sin(endAngle);
+            
+            const largeArc = angle > 180 ? 1 : 0;
+            
+            const pathData = [
+              `M ${cx} ${cy}`,
+              `L ${x1} ${y1}`,
+              `A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2}`,
+              'Z'
+            ].join(' ');
+            
+            currentAngle += angle;
+            
+            return (
+              <g key={i}>
+                <path
+                  d={pathData}
+                  fill={colorPalette[i % colorPalette.length]}
+                  stroke="white"
+                  strokeWidth="2"
+                />
+                {config.showDataLabels && percentage > 0.05 && (
+                  <text
+                    x={cx + (radius * 0.6) * Math.cos((startAngle + endAngle) / 2)}
+                    y={cy + (radius * 0.6) * Math.sin((startAngle + endAngle) / 2)}
+                    textAnchor="middle"
+                    fontSize="11"
+                    fill="white"
+                    fontWeight="600"
+                  >
+                    {Math.round(percentage * 100)}%
+                  </text>
+                )}
+              </g>
+            );
+          })}
+          
+          {/* Legend */}
+          {data.map((d, i) => (
+            <g key={i} transform={`translate(360, ${30 + i * 25})`}>
+              <rect x="0" y="0" width="15" height="15" fill={colorPalette[i % colorPalette.length]} rx="2" />
+              <text x="20" y="12" fontSize="11" fill="#374151">
+                {d.category}: {d[config.primaryYAxis[0].id]}
+              </text>
+            </g>
+          ))}
+        </svg>
+      );
+    }
+    
+    // Area Chart
+    if (chartType === 'area') {
+      const maxValue = Math.max(...data.flatMap(d => 
+        config.primaryYAxis.map(f => d[f.id] || 0)
+      ));
+      const chartHeight = 200;
+      const chartWidth = 450;
+      const padding = { top: 20, right: 40, bottom: 40, left: 50 };
+      const pointSpacing = chartWidth / (data.length - 1);
+      
+      return (
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`}>
+          <defs>
+            {config.primaryYAxis.map((field, j) => (
+              <linearGradient key={field.id} id={`gradient-${j}`} x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stopColor={colorPalette[j % colorPalette.length]} stopOpacity="0.6" />
+                <stop offset="100%" stopColor={colorPalette[j % colorPalette.length]} stopOpacity="0.1" />
+              </linearGradient>
+            ))}
+          </defs>
+          
+          {/* Grid lines */}
+          {config.showGridLines && [0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
+            <g key={i}>
+              <line 
+                x1={padding.left} 
+                y1={padding.top + chartHeight * ratio}
+                x2={padding.left + chartWidth} 
+                y2={padding.top + chartHeight * ratio}
+                stroke="#e5e7eb" 
+                strokeWidth="1"
+              />
+              <text 
+                x={padding.left - 10} 
+                y={padding.top + chartHeight * ratio + 4}
+                textAnchor="end"
+                fontSize="10"
+                fill="#6b7280"
+              >
+                {Math.round(maxValue * (1 - ratio))}
+              </text>
+            </g>
+          ))}
+          
+          {/* Areas */}
+          {config.primaryYAxis.map((field, j) => {
+            const points = data.map((d, i) => {
+              const x = padding.left + i * pointSpacing;
+              const value = d[field.id] || 0;
+              const y = padding.top + chartHeight - (value / maxValue) * chartHeight;
+              return `${x},${y}`;
+            }).join(' ');
+            
+            const areaPath = `M ${padding.left},${padding.top + chartHeight} L ${points} L ${padding.left + chartWidth},${padding.top + chartHeight} Z`;
+            
+            return (
+              <g key={field.id}>
+                <path
+                  d={areaPath}
+                  fill={`url(#gradient-${j})`}
+                />
+                <polyline
+                  points={points}
+                  fill="none"
+                  stroke={colorPalette[j % colorPalette.length]}
+                  strokeWidth="2"
+                />
+              </g>
+            );
+          })}
+          
+          {/* X-axis labels */}
+          {data.map((d, i) => (
+            <text
+              key={i}
+              x={padding.left + i * pointSpacing}
+              y={padding.top + chartHeight + 20}
+              textAnchor="middle"
+              fontSize="11"
+              fill="#374151"
+            >
+              {d.category}
+            </text>
+          ))}
+        </svg>
+      );
+    }
+    
+    // Default fallback for other chart types
     return (
-      <div className="analytics-page-loading">
-        <div className="loading-spinner"></div>
-        <p>Loading economic data...</p>
+      <div className="chart-preview">
+        <div className="chart-icon">{chartTypes.find(c => c.id === chartType)?.icon}</div>
+        <p>{chartTypes.find(c => c.id === chartType)?.name}</p>
+        <small>{config.xAxis.name} × {config.primaryYAxis.map(f => f.name).join(', ')}</small>
+        <div className="chart-config-summary">
+          <span>🎨 {config.colorScheme}</span>
+          {config.showDataLabels && <span>🏷️ Labels</span>}
+          {config.showGridLines && <span>📏 Grid</span>}
+        </div>
       </div>
     );
-  }
-
-  // Show info message if no data (backend not connected)
-  if (!dataLoading && historicalLMP.length === 0 && !dataError) {
-    console.log('No economic data available - backend API not connected');
-  }
+  };
+  
+  // Handle tile edge resizing
+  const handleResizeStart = (panelId, edge, e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const container = document.querySelector('.analytics-grid-container');
+    if (!container) return;
+    
+    const rect = container.getBoundingClientRect();
+    setContainerRect(rect);
+    
+    const panel = panels.find(p => p.id === panelId);
+    if (!panel) return;
+    
+    // Add resizing class to body for cursor override
+    document.body.classList.add('resizing');
+    
+    setResizing({
+      panelId,
+      edge,
+      startX: e.clientX,
+      startY: e.clientY,
+      startWidth: panel.width,
+      startHeight: panel.height
+    });
+  };
+  
+  const handleResizeMove = (e) => {
+    if (!resizing || !containerRect) return;
+    
+    const deltaX = ((e.clientX - resizing.startX) / containerRect.width) * 100;
+    const deltaY = ((e.clientY - resizing.startY) / containerRect.height) * 100;
+    
+    setPanels(prevPanels => {
+      const currentPanel = prevPanels.find(p => p.id === resizing.panelId);
+      if (!currentPanel) return prevPanels;
+      
+      const newPanels = prevPanels.map(p => ({ ...p }));
+      const currentPanelIndex = newPanels.findIndex(p => p.id === resizing.panelId);
+      
+      // Handle horizontal (right edge) resize
+      if (resizing.edge === 'right' || resizing.edge.includes('right')) {
+        const newWidth = Math.max(10, Math.min(90, resizing.startWidth + deltaX));
+        const widthDelta = newWidth - resizing.startWidth;
+        
+        // Find and adjust all panels in the same row
+        newPanels.forEach((panel, idx) => {
+          if (panel.row === currentPanel.row) {
+            if (panel.col === currentPanel.col) {
+              // Current panel being resized
+              panel.width = newWidth;
+            } else if (panel.col === currentPanel.col + 1) {
+              // Panel to the right - adjust inversely
+              panel.width = resizing.startWidth - widthDelta;
+              panel.width = Math.max(10, Math.min(90, panel.width));
+            }
+          }
+        });
+        
+        // Maintain same width ratios for other row
+        const otherRow = currentPanel.row === 0 ? 1 : 0;
+        newPanels.forEach((panel, idx) => {
+          if (panel.row === otherRow) {
+            if (panel.col === currentPanel.col) {
+              panel.width = newPanels.find(p => p.row === currentPanel.row && p.col === currentPanel.col).width;
+            } else if (panel.col === currentPanel.col + 1) {
+              panel.width = newPanels.find(p => p.row === currentPanel.row && p.col === currentPanel.col + 1).width;
+            }
+          }
+        });
+      }
+      
+      // Handle vertical (bottom edge) resize
+      if (resizing.edge === 'bottom' || (resizing.edge.includes('bottom') && !resizing.edge.includes('right'))) {
+        const newHeight = Math.max(10, Math.min(90, resizing.startHeight + deltaY));
+        const heightDelta = newHeight - resizing.startHeight;
+        
+        // Find and adjust all panels in the same column
+        newPanels.forEach((panel, idx) => {
+          if (panel.col === currentPanel.col) {
+            if (panel.row === currentPanel.row) {
+              // Current panel being resized
+              panel.height = newHeight;
+            } else if (panel.row === currentPanel.row + 1) {
+              // Panel below - adjust inversely
+              panel.height = resizing.startHeight - heightDelta;
+              panel.height = Math.max(10, Math.min(90, panel.height));
+            }
+          }
+        });
+        
+        // Maintain same height ratios for other column
+        const otherCol = currentPanel.col === 0 ? 1 : 0;
+        newPanels.forEach((panel, idx) => {
+          if (panel.col === otherCol) {
+            if (panel.row === currentPanel.row) {
+              panel.height = newPanels.find(p => p.col === currentPanel.col && p.row === currentPanel.row).height;
+            } else if (panel.row === currentPanel.row + 1) {
+              panel.height = newPanels.find(p => p.col === currentPanel.col && p.row === currentPanel.row + 1).height;
+            }
+          }
+        });
+      }
+      
+      // Handle corner resize (both width and height simultaneously)
+      if (resizing.edge === 'right-bottom') {
+        const newWidth = Math.max(10, Math.min(90, resizing.startWidth + deltaX));
+        const newHeight = Math.max(10, Math.min(90, resizing.startHeight + deltaY));
+        const widthDelta = newWidth - resizing.startWidth;
+        const heightDelta = newHeight - resizing.startHeight;
+        
+        // Adjust all panels to maintain grid structure
+        newPanels.forEach((panel, idx) => {
+          // Same row as current panel
+          if (panel.row === currentPanel.row) {
+            if (panel.col === currentPanel.col) {
+              panel.width = newWidth;
+              panel.height = newHeight;
+            } else if (panel.col === currentPanel.col + 1) {
+              panel.width = resizing.startWidth - widthDelta;
+              panel.width = Math.max(10, Math.min(90, panel.width));
+              panel.height = newHeight;
+            }
+          }
+          // Row below current panel
+          else if (panel.row === currentPanel.row + 1) {
+            if (panel.col === currentPanel.col) {
+              panel.width = newWidth;
+              panel.height = resizing.startHeight - heightDelta;
+              panel.height = Math.max(10, Math.min(90, panel.height));
+            } else if (panel.col === currentPanel.col + 1) {
+              panel.width = resizing.startWidth - widthDelta;
+              panel.width = Math.max(10, Math.min(90, panel.width));
+              panel.height = resizing.startHeight - heightDelta;
+              panel.height = Math.max(10, Math.min(90, panel.height));
+            }
+          }
+        });
+      }
+      
+      return newPanels;
+    });
+  };
+  
+  const handleResizeEnd = () => {
+    // Remove resizing class from body
+    document.body.classList.remove('resizing');
+    setResizing(null);
+    setContainerRect(null);
+  };
+  
+  useEffect(() => {
+    if (resizing) {
+      document.addEventListener('mousemove', handleResizeMove);
+      document.addEventListener('mouseup', handleResizeEnd);
+      return () => {
+        document.removeEventListener('mousemove', handleResizeMove);
+        document.removeEventListener('mouseup', handleResizeEnd);
+      };
+    }
+  }, [resizing, containerRect]);
+  
+  // Open configuration modal for a panel
+  const openPanelConfig = (panelId) => {
+    setActivePanel(panelId);
+    const panel = panels.find(p => p.id === panelId);
+    // Load existing configuration if available
+    if (panel && panel.config) {
+      setPanelConfig(panel.config);
+    } else {
+      // Reset to default
+      setPanelConfig({
+        chartType: null,
+        dataSource: null,
+        xAxis: null,
+        primaryYAxis: [],
+        secondaryYAxis: [],
+        legend: null,
+        filters: [],
+        aggregations: {},
+        sorting: { field: null, order: 'asc' },
+        colorScheme: 'default',
+        showDataLabels: false,
+        showGridLines: true
+      });
+    }
+    setShowConfigModal(true);
+  };
+  
+  // Save panel configuration
+  const savePanelConfig = () => {
+    const title = panelConfig.chartType 
+      ? `${chartTypes.find(c => c.id === panelConfig.chartType)?.name} - ${panelConfig.dataSource || 'No Data'}`
+      : 'Unconfigured Panel';
+    
+    setPanels(panels.map(panel => 
+      panel.id === activePanel 
+        ? { ...panel, config: panelConfig, title }
+        : panel
+    ));
+    setShowConfigModal(false);
+    setActivePanel(null);
+  };
+  
+  // Add field to axis
+  const addFieldToAxis = (axisType, field) => {
+    setPanelConfig(prev => {
+      if (axisType === 'xAxis') {
+        return { ...prev, xAxis: field };
+      } else if (axisType === 'legend') {
+        return { ...prev, legend: field };
+      } else if (axisType === 'primaryYAxis') {
+        if (!prev.primaryYAxis.find(f => f.id === field.id)) {
+          return { ...prev, primaryYAxis: [...prev.primaryYAxis, { ...field, aggregation: 'sum' }] };
+        }
+      } else if (axisType === 'secondaryYAxis') {
+        if (!prev.secondaryYAxis.find(f => f.id === field.id)) {
+          return { ...prev, secondaryYAxis: [...prev.secondaryYAxis, { ...field, aggregation: 'sum' }] };
+        }
+      }
+      return prev;
+    });
+  };
+  
+  // Remove field from axis
+  const removeFieldFromAxis = (axisType, fieldId) => {
+    setPanelConfig(prev => {
+      if (axisType === 'xAxis' && prev.xAxis?.id === fieldId) {
+        return { ...prev, xAxis: null };
+      } else if (axisType === 'legend' && prev.legend?.id === fieldId) {
+        return { ...prev, legend: null };
+      } else if (axisType === 'primaryYAxis') {
+        return { ...prev, primaryYAxis: prev.primaryYAxis.filter(f => f.id !== fieldId) };
+      } else if (axisType === 'secondaryYAxis') {
+        return { ...prev, secondaryYAxis: prev.secondaryYAxis.filter(f => f.id !== fieldId) };
+      }
+      return prev;
+    });
+  };
+  
+  // Update aggregation for a field
+  const updateAggregation = (axisType, fieldId, aggregation) => {
+    setPanelConfig(prev => {
+      if (axisType === 'primaryYAxis') {
+        return {
+          ...prev,
+          primaryYAxis: prev.primaryYAxis.map(f => 
+            f.id === fieldId ? { ...f, aggregation } : f
+          )
+        };
+      } else if (axisType === 'secondaryYAxis') {
+        return {
+          ...prev,
+          secondaryYAxis: prev.secondaryYAxis.map(f => 
+            f.id === fieldId ? { ...f, aggregation } : f
+          )
+        };
+      }
+      return prev;
+    });
+  };
+  
+  // Add new fuel type
+  const handleAddFuel = () => {
+    if (newFuelType.trim() && !fuelTypes.includes(newFuelType.trim())) {
+      setFuelTypes([...fuelTypes, newFuelType.trim()]);
+      setNewFuelType('');
+      setShowAddFuelModal(false);
+    }
+  };
 
   return (
     <div className="analytics-page">
       
-      {/* Backend Not Connected Banner */}
-      {!dataLoading && historicalLMP.length === 0 && (
-        <div className="backend-warning-banner">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2">
-            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-            <line x1="12" y1="9" x2="12" y2="13"/>
-            <line x1="12" y1="17" x2="12.01" y2="17"/>
-          </svg>
-          <span>Backend API not connected. Analytics will show without real data. See INTEGRATION_GUIDE.md for setup instructions.</span>
-        </div>
-      )}
-
-      <div className="page-header">
-        <div>
-          <h1>Analytics Dashboard</h1>
-          <p>Real economic insights from ISO-NE market data</p>
-        </div>
-        <div className="time-range-selector">
-          {['1h', '24h', '7d', '30d'].map(range => (
+      {/* Fuel Type Tabs - Horizontal bar below navbar */}
+      <div className="fuel-tabs-bar">
+        <div className="fuel-tabs-container">
+          {fuelTypes.map(fuel => (
             <button
-              key={range}
-              className={`range-btn ${timeRange === range ? 'active' : ''}`}
-              onClick={() => setTimeRange(range)}
+              key={fuel}
+              className={`fuel-tab ${activeFuelTab === fuel ? 'active' : ''}`}
+              onClick={() => setActiveFuelTab(fuel)}
             >
-              {range}
+              {fuel}
             </button>
+          ))}
+          <button 
+            className="fuel-tab add-fuel-tab"
+            onClick={() => setShowAddFuelModal(true)}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="12" y1="5" x2="12" y2="19"/>
+              <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Add Any
+          </button>
+        </div>
+      </div>
+      
+      {/* 4-Panel Grid with Individual Resizable Tiles */}
+      <div className="analytics-grid-container">
+        <div className="panels-grid">
+          {panels.map((panel, index) => (
+            <div 
+              key={panel.id}
+              className="dashboard-panel resizable"
+              style={{ 
+                width: `calc(${panel.width}% - 4px)`,
+                height: `calc(${panel.height}% - 4px)`,
+                margin: '2px',
+                position: 'relative'
+              }}
+            >
+              <div className="panel-header">
+                <h3>{panel.title}</h3>
+                <button 
+                  className="panel-config-btn"
+                  onClick={() => openPanelConfig(panel.id)}
+                  title="Configure Panel"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M12 1v6m0 6v6M23 12h-6m-6 0H5"/>
+                  </svg>
+                </button>
+              </div>
+              <div className="panel-content">
+                {renderChart(panel)}
+              </div>
+              
+              {/* Resize Handles */}
+              <div 
+                className="resize-handle resize-handle-right"
+                onMouseDown={(e) => handleResizeStart(panel.id, 'right', e)}
+                title="Drag to resize width"
+              />
+              <div 
+                className="resize-handle resize-handle-bottom"
+                onMouseDown={(e) => handleResizeStart(panel.id, 'bottom', e)}
+                title="Drag to resize height"
+              />
+              <div 
+                className="resize-handle resize-handle-corner"
+                onMouseDown={(e) => handleResizeStart(panel.id, 'right-bottom', e)}
+                title="Drag to resize both"
+              />
+            </div>
           ))}
         </div>
       </div>
-
-      <div className="metrics-row">
-        <div className="metric-card">
-          <div className="metric-icon" style={{ background: 'rgba(0, 212, 255, 0.1)' }}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00d4ff" strokeWidth="2">
-              <path d="M12 2v20M17 7H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-            </svg>
-          </div>
-          <div className="metric-info">
-            <div className="metric-value">${statistics.avgLMP}/MWh</div>
-            <div className="metric-label">Avg LMP (2025)</div>
-            <div className={`metric-change ${statistics.lmpChange >= 0 ? 'positive' : 'negative'}`}>
-              {statistics.lmpChange >= 0 ? '+' : ''}{statistics.lmpChange}%
+      
+      {/* Panel Configuration Modal - Power BI Style */}
+      {showConfigModal && (
+        <div className="modal-overlay" onClick={() => setShowConfigModal(false)}>
+          <div className="powerbi-modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="powerbi-modal-header">
+              <div>
+                <h2>Configure Visualization - Panel {activePanel}</h2>
+                <p className="modal-subtitle">Design your chart with Power BI-style field configuration</p>
+              </div>
+              <button 
+                className="modal-close-btn"
+                onClick={() => setShowConfigModal(false)}
+              >
+                ×
+              </button>
+            </div>
+            
+            <div className="powerbi-modal-body">
+              {/* Left Sidebar - Field List (Power BI Fields Pane) */}
+              <div className="fields-pane">
+                <div className="pane-header">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z"/>
+                  </svg>
+                  <h3>Fields</h3>
+                </div>
+                
+                {/* Data Source Selector */}
+                <div className="data-source-selector">
+                  <label>Data Source</label>
+                  <select 
+                    value={panelConfig.dataSource || ''}
+                    onChange={(e) => setPanelConfig({ ...panelConfig, dataSource: e.target.value })}
+                  >
+                    <option value="">Select data source...</option>
+                    {dataSources.map(source => (
+                      <option key={source} value={source}>{source}</option>
+                    ))}
+                  </select>
+                </div>
+                
+                {/* Dimensions Section */}
+                <div className="field-category">
+                  <div className="category-header">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2">
+                      <rect x="3" y="3" width="7" height="7"/>
+                      <rect x="14" y="3" width="7" height="7"/>
+                      <rect x="14" y="14" width="7" height="7"/>
+                      <rect x="3" y="14" width="7" height="7"/>
+                    </svg>
+                    <h4>Dimensions</h4>
+                  </div>
+                  <div className="field-list">
+                    {availableFields.dimensions.map(field => (
+                      <div 
+                        key={field.id} 
+                        className="field-item"
+                        draggable
+                        onDragStart={(e) => e.dataTransfer.setData('field', JSON.stringify(field))}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2">
+                          <rect x="3" y="3" width="18" height="18" rx="2"/>
+                        </svg>
+                        <span>{field.name}</span>
+                        <span className="field-table">{field.table}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                
+                {/* Measures Section */}
+                <div className="field-category">
+                  <div className="category-header">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2">
+                      <path d="M12 20V10M18 20V4M6 20v-6"/>
+                    </svg>
+                    <h4>Measures</h4>
+                  </div>
+                  <div className="field-list">
+                    {availableFields.measures.map(field => (
+                      <div 
+                        key={field.id} 
+                        className="field-item"
+                        draggable
+                        onDragStart={(e) => e.dataTransfer.setData('field', JSON.stringify(field))}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2">
+                          <path d="M12 20V10M18 20V4M6 20v-6"/>
+                        </svg>
+                        <span>{field.name}</span>
+                        <span className="field-table">{field.table}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              
+              {/* Center - Visualization Pane */}
+              <div className="visualization-pane">
+                <div className="pane-header">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="18" y1="20" x2="18" y2="10"/>
+                    <line x1="12" y1="20" x2="12" y2="4"/>
+                    <line x1="6" y1="20" x2="6" y2="14"/>
+                  </svg>
+                  <h3>Visualization</h3>
+                </div>
+                
+                {/* Chart Type Selector */}
+                <div className="chart-type-selector">
+                  <div className="chart-type-grid">
+                    {chartTypes.map(chart => (
+                      <button
+                        key={chart.id}
+                        className={`chart-type-btn ${panelConfig.chartType === chart.id ? 'active' : ''}`}
+                        onClick={() => setPanelConfig({ ...panelConfig, chartType: chart.id })}
+                        title={chart.name}
+                      >
+                        <span className="chart-icon">{chart.icon}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                
+                {/* Field Wells (Power BI Style) */}
+                <div className="field-wells">
+                  <h4>Field Configuration</h4>
+                  
+                  {/* X-Axis Drop Zone */}
+                  <div className="field-well"
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const field = JSON.parse(e.dataTransfer.getData('field'));
+                      addFieldToAxis('xAxis', field);
+                    }}
+                  >
+                    <div className="well-header">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <line x1="3" y1="12" x2="21" y2="12"/>
+                        <polyline points="8 17 3 12 8 7"/>
+                        <polyline points="16 17 21 12 16 7"/>
+                      </svg>
+                      <span>X-Axis (Category)</span>
+                    </div>
+                    <div className="well-drop-zone">
+                      {panelConfig.xAxis ? (
+                        <div className="field-chip">
+                          <span>{panelConfig.xAxis.name}</span>
+                          <button onClick={() => removeFieldFromAxis('xAxis', panelConfig.xAxis.id)}>×</button>
+                        </div>
+                      ) : (
+                        <span className="drop-hint">Drag field here</span>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* Primary Y-Axis Drop Zone */}
+                  <div className="field-well"
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const field = JSON.parse(e.dataTransfer.getData('field'));
+                      addFieldToAxis('primaryYAxis', field);
+                    }}
+                  >
+                    <div className="well-header">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2">
+                        <line x1="12" y1="3" x2="12" y2="21"/>
+                        <polyline points="7 8 12 3 17 8"/>
+                        <polyline points="7 16 12 21 17 16"/>
+                      </svg>
+                      <span>Primary Y-Axis (Values)</span>
+                    </div>
+                    <div className="well-drop-zone multi">
+                      {panelConfig.primaryYAxis.length > 0 ? (
+                        panelConfig.primaryYAxis.map(field => (
+                          <div key={field.id} className="field-chip with-agg">
+                            <select 
+                              value={field.aggregation}
+                              onChange={(e) => updateAggregation('primaryYAxis', field.id, e.target.value)}
+                              className="agg-selector"
+                            >
+                              {field.aggregation && availableFields.measures.find(f => f.id === field.id)?.aggregation?.map(agg => (
+                                <option key={agg} value={agg}>{agg.toUpperCase()}</option>
+                              ))}
+                            </select>
+                            <span>{field.name}</span>
+                            <button onClick={() => removeFieldFromAxis('primaryYAxis', field.id)}>×</button>
+                          </div>
+                        ))
+                      ) : (
+                        <span className="drop-hint">Drag measures here</span>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* Secondary Y-Axis Drop Zone (if supported) */}
+                  {panelConfig.chartType && chartTypes.find(c => c.id === panelConfig.chartType)?.supportsSecondaryAxis && (
+                    <div className="field-well"
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const field = JSON.parse(e.dataTransfer.getData('field'));
+                        addFieldToAxis('secondaryYAxis', field);
+                      }}
+                    >
+                      <div className="well-header">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2">
+                          <line x1="12" y1="3" x2="12" y2="21"/>
+                          <polyline points="7 8 12 3 17 8"/>
+                          <polyline points="7 16 12 21 17 16"/>
+                        </svg>
+                        <span>Secondary Y-Axis (Optional)</span>
+                      </div>
+                      <div className="well-drop-zone multi">
+                        {panelConfig.secondaryYAxis.length > 0 ? (
+                          panelConfig.secondaryYAxis.map(field => (
+                            <div key={field.id} className="field-chip with-agg">
+                              <select 
+                                value={field.aggregation}
+                                onChange={(e) => updateAggregation('secondaryYAxis', field.id, e.target.value)}
+                                className="agg-selector"
+                              >
+                                {field.aggregation && availableFields.measures.find(f => f.id === field.id)?.aggregation?.map(agg => (
+                                  <option key={agg} value={agg}>{agg.toUpperCase()}</option>
+                                ))}
+                              </select>
+                              <span>{field.name}</span>
+                              <button onClick={() => removeFieldFromAxis('secondaryYAxis', field.id)}>×</button>
+                            </div>
+                          ))
+                        ) : (
+                          <span className="drop-hint">Drag measures here (optional)</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Legend Drop Zone */}
+                  <div className="field-well"
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const field = JSON.parse(e.dataTransfer.getData('field'));
+                      addFieldToAxis('legend', field);
+                    }}
+                  >
+                    <div className="well-header">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <rect x="3" y="3" width="7" height="7"/>
+                        <rect x="14" y="3" width="7" height="7"/>
+                        <rect x="3" y="14" width="7" height="7"/>
+                      </svg>
+                      <span>Legend (Series)</span>
+                    </div>
+                    <div className="well-drop-zone">
+                      {panelConfig.legend ? (
+                        <div className="field-chip">
+                          <span>{panelConfig.legend.name}</span>
+                          <button onClick={() => removeFieldFromAxis('legend', panelConfig.legend.id)}>×</button>
+                        </div>
+                      ) : (
+                        <span className="drop-hint">Drag field here (optional)</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Right Sidebar - Format Pane */}
+              <div className="format-pane">
+                <div className="pane-header">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M12 1v6m0 6v6M23 12h-6m-6 0H5"/>
+                  </svg>
+                  <h3>Format</h3>
+                </div>
+                
+                <div className="format-options">
+                  {/* Color Scheme */}
+                  <div className="format-section">
+                    <label>Color Scheme</label>
+                    <select 
+                      value={panelConfig.colorScheme}
+                      onChange={(e) => setPanelConfig({ ...panelConfig, colorScheme: e.target.value })}
+                    >
+                      <option value="default">Default</option>
+                      <option value="blue">Blue</option>
+                      <option value="green">Green</option>
+                      <option value="red">Red</option>
+                      <option value="gradient">Gradient</option>
+                      <option value="custom">Custom</option>
+                    </select>
+                  </div>
+                  
+                  {/* Display Options */}
+                  <div className="format-section">
+                    <label className="checkbox-label">
+                      <input 
+                        type="checkbox"
+                        checked={panelConfig.showDataLabels}
+                        onChange={(e) => setPanelConfig({ ...panelConfig, showDataLabels: e.target.checked })}
+                      />
+                      <span>Show Data Labels</span>
+                    </label>
+                  </div>
+                  
+                  <div className="format-section">
+                    <label className="checkbox-label">
+                      <input 
+                        type="checkbox"
+                        checked={panelConfig.showGridLines}
+                        onChange={(e) => setPanelConfig({ ...panelConfig, showGridLines: e.target.checked })}
+                      />
+                      <span>Show Grid Lines</span>
+                    </label>
+                  </div>
+                  
+                  {/* Sorting */}
+                  <div className="format-section">
+                    <label>Sort By</label>
+                    <select 
+                      value={panelConfig.sorting.field || ''}
+                      onChange={(e) => setPanelConfig({ 
+                        ...panelConfig, 
+                        sorting: { ...panelConfig.sorting, field: e.target.value }
+                      })}
+                    >
+                      <option value="">None</option>
+                      {panelConfig.xAxis && <option value={panelConfig.xAxis.id}>{panelConfig.xAxis.name}</option>}
+                      {panelConfig.primaryYAxis.map(f => (
+                        <option key={f.id} value={f.id}>{f.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  <div className="format-section">
+                    <label>Sort Order</label>
+                    <select 
+                      value={panelConfig.sorting.order}
+                      onChange={(e) => setPanelConfig({ 
+                        ...panelConfig, 
+                        sorting: { ...panelConfig.sorting, order: e.target.value }
+                      })}
+                    >
+                      <option value="asc">Ascending</option>
+                      <option value="desc">Descending</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            {/* Modal Footer */}
+            <div className="powerbi-modal-footer">
+              <button className="btn-cancel" onClick={() => setShowConfigModal(false)}>
+                Cancel
+              </button>
+              <button 
+                className="btn-save" 
+                onClick={savePanelConfig}
+                disabled={!panelConfig.chartType || !panelConfig.dataSource}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+                Apply Configuration
+              </button>
             </div>
           </div>
         </div>
-
-        <div className="metric-card">
-          <div className="metric-icon" style={{ background: 'rgba(76, 175, 80, 0.1)' }}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4caf50" strokeWidth="2">
-              <circle cx="12" cy="12" r="10"/>
-              <polyline points="12 6 12 12 16 14"/>
-            </svg>
-          </div>
-          <div className="metric-info">
-            <div className="metric-value">{statistics.avgEfficiency}%</div>
-            <div className="metric-label">Avg Efficiency</div>
-            <div className="metric-change positive">System-wide</div>
-          </div>
-        </div>
-
-        <div className="metric-card">
-          <div className="metric-icon" style={{ background: 'rgba(156, 39, 176, 0.1)' }}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#9c27b0" strokeWidth="2">
-              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-            </svg>
-          </div>
-          <div className="metric-info">
-            <div className="metric-value">${statistics.forecastBase.toFixed(2)}</div>
-            <div className="metric-label">5Y Forecast</div>
-            <div className="metric-change neutral">Base Case</div>
-          </div>
-        </div>
-
-        <div className="metric-card">
-          <div className="metric-icon" style={{ background: 'rgba(59, 130, 246, 0.1)' }}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2">
-              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-            </svg>
-          </div>
-          <div className="metric-info">
-            <div className="metric-value">{statistics.totalZones}</div>
-            <div className="metric-label">Active Zones</div>
-            <div className="metric-change neutral">{statistics.dataPoints} records</div>
+      )}
+      
+      {/* Add Fuel Type Modal */}
+      {showAddFuelModal && (
+        <div className="modal-overlay" onClick={() => setShowAddFuelModal(false)}>
+          <div className="modal-content small" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Add Fuel Type</h2>
+              <button 
+                className="modal-close-btn"
+                onClick={() => setShowAddFuelModal(false)}
+              >
+                ×
+              </button>
+            </div>
+            
+            <div className="modal-body">
+              <input
+                type="text"
+                className="fuel-input"
+                placeholder="Enter fuel type name..."
+                value={newFuelType}
+                onChange={(e) => setNewFuelType(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleAddFuel()}
+              />
+              <button className="add-fuel-btn" onClick={handleAddFuel}>
+                Add Fuel Type
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-
-      <div className="charts-grid">
-        <div className="chart-card">
-          <h3>Historical Average LMP (2022-2025)</h3>
-          {getLMPHistoryOption() && <ReactECharts option={getLMPHistoryOption()} style={{ height: '300px' }} />}
-        </div>
-
-        <div className="chart-card">
-          <h3>Zone Efficiency Distribution</h3>
-          {getEfficiencyOption() && <ReactECharts option={getEfficiencyOption()} style={{ height: '300px' }} />}
-        </div>
-
-        <div className="chart-card">
-          <h3>Load Distribution by Substation</h3>
-          <ReactECharts option={getLoadDistributionOption()} style={{ height: '300px' }} />
-        </div>
-
-        <div className="chart-card">
-          <h3>LMP Forecast (5-Year Outlook)</h3>
-          {getForecastOption() && <ReactECharts option={getForecastOption()} style={{ height: '300px' }} />}
-        </div>
-      </div>
+      )}
     </div>
   );
 };

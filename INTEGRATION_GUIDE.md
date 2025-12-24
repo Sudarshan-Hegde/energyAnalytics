@@ -1,7 +1,7 @@
 # GridSense - Real Data Integration Complete 🎉
 
 ## Overview
-This document outlines the comprehensive integration of real infrastructure and economic data from the `gridsense_iso_ne_sample.db` SQLite database into the GridSense application.
+This document outlines the comprehensive integration of real infrastructure and economic data from the `gridsense_iso_ne.db` SQLite database into the GridSense application.
 
 ## What Changed
 
@@ -188,7 +188,7 @@ GET /grid-data/loss-components
 
 ## Database Schema Expected
 
-Based on your `gridsense_iso_ne_sample.db`:
+Based on your `gridsense_iso_ne.db`:
 
 ### Buses Table
 - `bus_id` (primary key)

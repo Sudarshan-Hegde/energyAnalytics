@@ -12,8 +12,26 @@ const Maps = ({ selectedISO }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [showSearchPanel, setShowSearchPanel] = useState(false);
-  const [selectedSubstations, setSelectedSubstations] = useState([]);
-  const [selectedHeatmap, setSelectedHeatmap] = useState('');
+  
+  // Load persisted state from localStorage (Task 6)
+  const loadPersistedState = () => {
+    try {
+      const savedState = localStorage.getItem('mapsState');
+      if (savedState) {
+        const parsed = JSON.parse(savedState);
+        console.log('📂 Loading persisted Maps state:', parsed);
+        return parsed;
+      }
+    } catch (error) {
+      console.error('Error loading persisted state:', error);
+    }
+    return null;
+  };
+  
+  const persistedState = loadPersistedState();
+  
+  const [selectedSubstations, setSelectedSubstations] = useState(persistedState?.selectedSubstations || []);
+  const [selectedHeatmap, setSelectedHeatmap] = useState(persistedState?.selectedHeatmap || '');
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(280);
   const [detailPanelWidth, setDetailPanelWidth] = useState(380);
   const [rightPanelWidth, setRightPanelWidth] = useState(400);
@@ -67,7 +85,7 @@ const Maps = ({ selectedISO }) => {
     }
   }, [dataLoading, buses.length, dataError]);
 
-  const [currentLayer, setCurrentLayer] = useState('satellite');
+  const [currentLayer, setCurrentLayer] = useState(persistedState?.currentLayer || 'satellite');
   const [currentLocation, setCurrentLocation] = useState('Loading location...');
   const [mapCenter, setMapCenter] = useState({ lat: 37.75, lng: -122.4 });
   const [isLayerDropdownOpen, setIsLayerDropdownOpen] = useState(false);
@@ -104,9 +122,9 @@ const Maps = ({ selectedISO }) => {
     futureSubstationUpgrades: false,
     futureTransmissionUpgrades: false
   });
-  const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
-  const [detailPanelOpen, setDetailPanelOpen] = useState(true);
-  const [rightPanelOpen, setRightPanelOpen] = useState(true);
+  const [leftSidebarOpen, setLeftSidebarOpen] = useState(persistedState?.leftSidebarOpen !== undefined ? persistedState.leftSidebarOpen : true);
+  const [detailPanelOpen, setDetailPanelOpen] = useState(persistedState?.detailPanelOpen !== undefined ? persistedState.detailPanelOpen : true);
+  const [rightPanelOpen, setRightPanelOpen] = useState(persistedState?.rightPanelOpen !== undefined ? persistedState.rightPanelOpen : true);
   const [expandedSections, setExpandedSections] = useState({
     gridInfrastructure: true,
     substations: true,
@@ -134,15 +152,40 @@ const Maps = ({ selectedISO }) => {
   const [futureOutlookLoading, setFutureOutlookLoading] = useState(false);
   
   // Constraint View states
-  const [activeRightTab, setActiveRightTab] = useState('constraints'); // 'constraints' or 'dashboard'
+  const [activeRightTab, setActiveRightTab] = useState(persistedState?.activeRightTab || 'constraints'); // 'constraints' or 'dashboard'
   const [scenarios, setScenarios] = useState([]);
-  const [selectedScenarios, setSelectedScenarios] = useState([]);
-  const [constraintType, setConstraintType] = useState('both');
-  const [busSearch, setBusSearch] = useState('');
+  const [selectedScenarios, setSelectedScenarios] = useState(persistedState?.selectedScenarios || []);
+  const [constraintType, setConstraintType] = useState(persistedState?.constraintType || 'both');
+  const [busSearch, setBusSearch] = useState(persistedState?.busSearch || '');
+  const [selectedBusesForConstraints, setSelectedBusesForConstraints] = useState(persistedState?.selectedBusesForConstraints || []); // Task 1: Store multiple selected buses
   const [constraints, setConstraints] = useState([]);
   const [constraintsLoading, setConstraintsLoading] = useState(false);
   const [showConstraintModal, setShowConstraintModal] = useState(false);
   const [showDashboardModal, setShowDashboardModal] = useState(false);
+  
+  // Substation types state (Task 5)
+  const [substationTypes, setSubstationTypes] = useState([]);
+  const [substationTypesLoading, setSubstationTypesLoading] = useState(false);
+  
+  // Fetch substation types from database
+  useEffect(() => {
+    const fetchSubstationTypes = async () => {
+      setSubstationTypesLoading(true);
+      try {
+        const res = await fetch('http://localhost:8000/grid-data/substation-types');
+        const data = await res.json();
+        if (data.success) {
+          setSubstationTypes(data.data);
+          console.log('✅ Loaded substation types:', data.data);
+        }
+      } catch (error) {
+        console.error('Error fetching substation types:', error);
+      } finally {
+        setSubstationTypesLoading(false);
+      }
+    };
+    fetchSubstationTypes();
+  }, []);
   
   // Fetch Future Outlook data when map loads
   useEffect(() => {
@@ -194,6 +237,7 @@ const Maps = ({ selectedISO }) => {
   }, []);
   
   // Fetch constraints when selections change
+  // Fetch constraints based on selected buses (Task 1)
   useEffect(() => {
     if (selectedScenarios.length === 0) {
       setConstraints([]);
@@ -206,7 +250,13 @@ const Maps = ({ selectedISO }) => {
         const params = new URLSearchParams();
         selectedScenarios.forEach(s => params.append('scenarios[]', s));
         params.append('type', constraintType);
-        if (busSearch) params.append('search', busSearch);
+        
+        // If buses are selected, fetch constraints for those buses
+        if (selectedBusesForConstraints.length > 0) {
+          selectedBusesForConstraints.forEach(bus => params.append('buses[]', bus));
+        } else if (busSearch) {
+          params.append('search', busSearch);
+        }
         
         const res = await fetch(`http://localhost:8000/grid-data/constraints?${params}`);
         const data = await res.json();
@@ -220,12 +270,36 @@ const Maps = ({ selectedISO }) => {
     };
     
     fetchConstraints();
-  }, [selectedScenarios, constraintType, busSearch]);
+  }, [selectedScenarios, constraintType, busSearch, selectedBusesForConstraints]);
   
   // Keep ref in sync with state
   useEffect(() => {
     visibleLayersRef.current = visibleLayers;
   }, [visibleLayers]);
+  
+  // Save state to localStorage when it changes (Task 6)
+  useEffect(() => {
+    const stateToSave = {
+      selectedSubstations,
+      selectedHeatmap,
+      leftSidebarOpen,
+      detailPanelOpen,
+      rightPanelOpen,
+      currentLayer,
+      busSearch,
+      selectedBusesForConstraints,
+      selectedScenarios,
+      constraintType,
+      activeRightTab
+    };
+    
+    try {
+      localStorage.setItem('mapsState', JSON.stringify(stateToSave));
+      console.log('💾 Saved Maps state to localStorage');
+    } catch (error) {
+      console.error('Error saving state:', error);
+    }
+  }, [selectedSubstations, selectedHeatmap, leftSidebarOpen, detailPanelOpen, rightPanelOpen, currentLayer, busSearch, selectedBusesForConstraints, selectedScenarios, constraintType, activeRightTab]);
 
   // Function to create base style with political boundaries overlay
   const createMapStyle = (baseLayer) => {
@@ -1002,6 +1076,23 @@ const Maps = ({ selectedISO }) => {
       id: substationData.id,
       name: substationData.name,
       coordinates: substationData.coordinates
+    });
+    
+    // Update bus search and selected buses in constraint view (Task 1)
+    const busName = substationData.name || '';
+    setSelectedBusesForConstraints(prev => {
+      const exists = prev.includes(busName);
+      if (exists) {
+        // Remove if already selected
+        const newBuses = prev.filter(b => b !== busName);
+        setBusSearch(newBuses.join(', '));
+        return newBuses;
+      } else {
+        // Add to selection
+        const newBuses = [...prev, busName];
+        setBusSearch(newBuses.join(', '));
+        return newBuses;
+      }
     });
     
     setSelectedSubstations(prev => {
@@ -2035,14 +2126,26 @@ const Maps = ({ selectedISO }) => {
                   </div>
                   {expandedSections.substations && (
                     <div className="subsection-items">
-                      <div className="layer-item">
-                        <input type="checkbox" id="sub-69kv" defaultChecked />
-                        <label htmlFor="sub-69kv">Indian Pass - 69kV</label>
-                      </div>
-                      <div className="layer-item">
-                        <input type="checkbox" id="sub-230kv" />
-                        <label htmlFor="sub-230kv">Port St. Joe - 230kV</label>
-                      </div>
+                      {substationTypesLoading ? (
+                        <div className="layer-item">
+                          <span style={{ color: '#6b7280', fontSize: '12px' }}>Loading substations...</span>
+                        </div>
+                      ) : substationTypes.length > 0 ? (
+                        substationTypes.map((substation) => (
+                          <div key={substation.id} className="layer-item">
+                            <input 
+                              type="checkbox" 
+                              id={`sub-${substation.id}`} 
+                              defaultChecked 
+                            />
+                            <label htmlFor={`sub-${substation.id}`}>{substation.label}</label>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="layer-item">
+                          <span style={{ color: '#6b7280', fontSize: '12px' }}>No substations found</span>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -2441,8 +2544,36 @@ const Maps = ({ selectedISO }) => {
               <button 
                 className="clear-filters-btn"
                 onClick={() => setActiveFilters({ voltages: [], capacities: [], statuses: [], regions: [] })}
+                style={{
+                  marginTop: '12px',
+                  padding: '8px 16px',
+                  background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontWeight: '500',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  transition: 'all 0.2s ease',
+                  boxShadow: '0 2px 4px rgba(239, 68, 68, 0.2)'
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.transform = 'translateY(-1px)';
+                  e.target.style.boxShadow = '0 4px 8px rgba(239, 68, 68, 0.3)';
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.transform = 'translateY(0)';
+                  e.target.style.boxShadow = '0 2px 4px rgba(239, 68, 68, 0.2)';
+                }}
               >
-                Clear All
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="18" y1="6" x2="6" y2="18"/>
+                  <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+                Clear All Filters
               </button>
             )}
           </div>
@@ -2481,7 +2612,39 @@ const Maps = ({ selectedISO }) => {
             {selectedSubstations.length > 0 ? `Selected Substations [${selectedSubstations.length}]` : `Substations [${buses.length}]`}
           </span>
           {selectedSubstations.length > 0 && (
-            <button className="close-detail-btn" onClick={() => setSelectedSubstations([])}>Clear All</button>
+            <button 
+              className="close-detail-btn" 
+              onClick={() => setSelectedSubstations([])}
+              style={{
+                padding: '6px 12px',
+                background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '5px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                fontSize: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                transition: 'all 0.2s ease',
+                boxShadow: '0 2px 4px rgba(245, 158, 11, 0.2)'
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.transform = 'scale(1.05)';
+                e.target.style.boxShadow = '0 3px 6px rgba(245, 158, 11, 0.3)';
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.transform = 'scale(1)';
+                e.target.style.boxShadow = '0 2px 4px rgba(245, 158, 11, 0.2)';
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+              Clear All
+            </button>
           )}
         </div>
         <div className="detail-panel-content">
@@ -2508,6 +2671,20 @@ const Maps = ({ selectedISO }) => {
                   <details className="info-section" open={index === 0}>
                     <summary className="section-title">Summary</summary>
                     <div className="section-content">
+                      <div className="info-row" style={{ 
+                        padding: '12px', 
+                        background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
+                        borderRadius: '8px',
+                        border: '1px solid #3b82f6',
+                        marginBottom: '12px'
+                      }}>
+                        <span className="info-label" style={{ color: '#1e40af', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2">
+                            <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                          </svg>
+                          AI Summary Coming Soon
+                        </span>
+                      </div>
                       <div className="info-row">
                         <span className="info-label">Bus ID:</span>
                         <span className="info-value">{substation.id}</span>
@@ -2560,24 +2737,40 @@ const Maps = ({ selectedISO }) => {
                   <details className="info-section">
                     <summary className="section-title">Power Flow</summary>
                     <div className="section-content">
+                      {substation.voltage && (
+                        <div className="info-row">
+                          <span className="info-label">Nominal Voltage:</span>
+                          <span className="info-value">{substation.voltage} kV</span>
+                        </div>
+                      )}
+                      {substation.zone && (
+                        <div className="info-row">
+                          <span className="info-label">Zone:</span>
+                          <span className="info-value">{substation.zone}</span>
+                        </div>
+                      )}
+                      {substation.shortCircuit && (
+                        <div className="info-row">
+                          <span className="info-label">3-Phase Short Circuit:</span>
+                          <span className="info-value">{parseFloat(substation.shortCircuit).toFixed(2)} MVA</span>
+                        </div>
+                      )}
+                      {substation.county && substation.state && (
+                        <div className="info-row">
+                          <span className="info-label">Location:</span>
+                          <span className="info-value">{substation.county}, {substation.state}</span>
+                        </div>
+                      )}
                       <div className="info-row">
-                        <span className="info-label">Active Power:</span>
-                        <span className="info-value">Data from backend</span>
-                      </div>
-                      <div className="info-row">
-                        <span className="info-label">Reactive Power:</span>
-                        <span className="info-value">Data from backend</span>
-                      </div>
-                      <div className="info-row">
-                        <span className="info-label">Power Factor:</span>
-                        <span className="info-value">Data from backend</span>
+                        <span className="info-label">Bus ID:</span>
+                        <span className="info-value">{substation.id}</span>
                       </div>
                     </div>
                   </details>
 
-                  {/* Financial Dropdown */}
+                  {/* SCED (formerly Financial) Dropdown */}
                   <details className="info-section">
-                    <summary className="section-title">Financial</summary>
+                    <summary className="section-title">SCED</summary>
                     <div className="section-content">
                       <div className="info-row header-row">
                         <span className="info-label">Historical Average LMP ($/MWh)</span>
@@ -2606,6 +2799,12 @@ const Maps = ({ selectedISO }) => {
                           <span className="info-value">${parseFloat(substation.lmp2025).toFixed(2)}</span>
                         </div>
                       )}
+                      {substation.zone && (
+                        <div className="info-row">
+                          <span className="info-label">Economic Zone:</span>
+                          <span className="info-value">{substation.zone}</span>
+                        </div>
+                      )}
                     </div>
                   </details>
                 </div>
@@ -2629,10 +2828,13 @@ const Maps = ({ selectedISO }) => {
       <div className="map-container-wrapper">
         <div className="map-main-content">
           {/* Search Control - Fixed Position */}
-          <div className="map-search-control">
+          <div 
+            className="map-search-control"
+            onMouseEnter={() => setShowSearchPanel(true)}
+            onMouseLeave={() => setShowSearchPanel(false)}
+          >
             <button 
               className="search-toggle-btn"
-              onClick={() => setShowSearchPanel(!showSearchPanel)}
               title="Search location"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -2936,8 +3138,8 @@ const Maps = ({ selectedISO }) => {
             )}
           </div>
 
-          {/* Map Controls */}
-          <div className="map-controls-right">
+          {/* Map Controls - REMOVED (using MapLibre native controls instead) */}
+          {/* <div className="map-controls-right">
             <button className="map-control-btn" title="Compass">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="12" cy="12" r="10"/>
@@ -2966,7 +3168,7 @@ const Maps = ({ selectedISO }) => {
                 <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
               </svg>
             </button>
-          </div>
+          </div> */}
         </div>
       </div>
 
@@ -3094,16 +3296,66 @@ const Maps = ({ selectedISO }) => {
                     </div>
                   </div>
                   
-                  {/* Bus Search */}
+                  {/* Bus Search with Multiple Selection */}
                   <div className="filter-group">
-                    <label className="filter-label">Search (bus/line/contingency/facility)</label>
+                    <label className="filter-label">Search & Select Buses (comma-separated or type to search)</label>
                     <input
                       type="text"
                       className="search-input"
-                      placeholder="e.g., Mystic, 115 kV, Line 1234, SLL"
+                      placeholder="e.g., Mystic, Post St. Joe, Indian Pass"
                       value={busSearch}
-                      onChange={(e) => setBusSearch(e.target.value)}
+                      onChange={(e) => {
+                        setBusSearch(e.target.value);
+                        // Parse comma-separated values and update selected buses
+                        const busNames = e.target.value.split(',').map(b => b.trim()).filter(b => b.length > 0);
+                        setSelectedBusesForConstraints(busNames);
+                      }}
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter') {
+                          const busNames = busSearch.split(',').map(b => b.trim()).filter(b => b.length > 0);
+                          setSelectedBusesForConstraints(busNames);
+                        }
+                      }}
                     />
+                    {selectedBusesForConstraints.length > 0 && (
+                      <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                        {selectedBusesForConstraints.map((bus, idx) => (
+                          <span key={idx} style={{
+                            background: '#dbeafe',
+                            color: '#1e40af',
+                            padding: '4px 8px',
+                            borderRadius: '4px',
+                            fontSize: '12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}>
+                            {bus}
+                            <button
+                              onClick={() => {
+                                const newBuses = selectedBusesForConstraints.filter((_, i) => i !== idx);
+                                setSelectedBusesForConstraints(newBuses);
+                                setBusSearch(newBuses.join(', '));
+                              }}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                color: '#1e40af',
+                                cursor: 'pointer',
+                                padding: '0',
+                                display: 'flex',
+                                alignItems: 'center'
+                              }}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <line x1="18" y1="6" x2="6" y2="18"/>
+                                <line x1="6" y1="6" x2="18" y2="18"/>
+                              </svg>
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   
                   {/* Row Count & Expand Button */}
@@ -3399,184 +3651,229 @@ const Maps = ({ selectedISO }) => {
         )}
       </div>
       
-      {/* Constraint Modal */}
+      {/* Constraint Modal - Modern Design */}
       {showConstraintModal && (
-        <div className="fullscreen-modal" onClick={() => setShowConstraintModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Constraints - Full View</h2>
-              <button className="modal-close" onClick={() => setShowConstraintModal(false)}>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <div className="constraint-modal-overlay" onClick={() => setShowConstraintModal(false)}>
+          <div className="constraint-modal-window" onClick={(e) => e.stopPropagation()}>
+            <div className="constraint-modal-header">
+              <div className="modal-header-left">
+                <div className="modal-icon-wrapper">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2">
+                    <path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z"/>
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="modal-title">Constraint Analysis</h2>
+                  <p className="modal-subtitle">Comprehensive system constraint view across all scenarios</p>
+                </div>
+              </div>
+              <button className="constraint-modal-close" onClick={() => setShowConstraintModal(false)}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <line x1="18" y1="6" x2="6" y2="18"/>
                   <line x1="6" y1="6" x2="18" y2="18"/>
                 </svg>
               </button>
             </div>
             
-            {/* Same filters as sidebar */}
-            <div className="modal-filters">
-              <div className="filter-group">
-                <label className="filter-label">Scenario(s)</label>
-                <div className="selected-scenarios">
-                  {selectedScenarios.map(scenarioId => {
-                    const scenario = scenarios.find(s => s.id === scenarioId);
-                    return (
-                      <span key={scenarioId} className="scenario-tag">
-                        {scenario?.name || scenarioId}
-                        <button onClick={() => removeScenario(scenarioId)} className="tag-remove">×</button>
-                      </span>
-                    );
-                  })}
-                </div>
-                <details className="scenario-dropdown">
-                  <summary className="dropdown-trigger">Select Scenarios</summary>
-                  <div className="dropdown-content">
-                    {scenarios.map(scenario => (
-                      <label key={scenario.id} className="dropdown-item">
-                        <input
-                          type="checkbox"
-                          checked={selectedScenarios.includes(scenario.id)}
-                          onChange={() => toggleScenario(scenario.id)}
-                        />
-                        <span>{scenario.name}</span>
-                      </label>
-                    ))}
+            <div className="constraint-modal-body">
+              {/* Filters Section */}
+              <div className="constraint-modal-filters">
+                <div className="filter-group">
+                  <label className="filter-label">Scenario(s)</label>
+                  <div className="selected-scenarios">
+                    {selectedScenarios.map(scenarioId => {
+                      const scenario = scenarios.find(s => s.id === scenarioId);
+                      return (
+                        <span key={scenarioId} className="scenario-tag">
+                          {scenario?.name || scenarioId}
+                          <button onClick={() => removeScenario(scenarioId)} className="tag-remove">×</button>
+                        </span>
+                      );
+                    })}
                   </div>
-                </details>
-              </div>
-              
-              <div className="filter-group">
-                <label className="filter-label">Constraint type</label>
-                <div className="radio-group">
-                  <label className="radio-label">
-                    <input type="radio" name="modalConstraintType" value="both" checked={constraintType === 'both'} onChange={(e) => setConstraintType(e.target.value)} />
-                    <span>Both</span>
-                  </label>
-                  <label className="radio-label">
-                    <input type="radio" name="modalConstraintType" value="substation" checked={constraintType === 'substation'} onChange={(e) => setConstraintType(e.target.value)} />
-                    <span>Substation</span>
-                  </label>
-                  <label className="radio-label">
-                    <input type="radio" name="modalConstraintType" value="branch" checked={constraintType === 'branch'} onChange={(e) => setConstraintType(e.target.value)} />
-                    <span>Branch</span>
-                  </label>
+                  <details className="scenario-dropdown">
+                    <summary className="dropdown-trigger">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="12" y1="8" x2="12" y2="16"/>
+                        <line x1="8" y1="12" x2="16" y2="12"/>
+                      </svg>
+                      Select Scenarios
+                    </summary>
+                    <div className="dropdown-content">
+                      {scenarios.map(scenario => (
+                        <label key={scenario.id} className="dropdown-item">
+                          <input
+                            type="checkbox"
+                            checked={selectedScenarios.includes(scenario.id)}
+                            onChange={() => toggleScenario(scenario.id)}
+                          />
+                          <span>{scenario.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </details>
+                </div>
+                
+                <div className="filter-group">
+                  <label className="filter-label">Constraint Type</label>
+                  <div className="radio-group">
+                    <label className="radio-label">
+                      <input type="radio" name="modalConstraintType" value="both" checked={constraintType === 'both'} onChange={(e) => setConstraintType(e.target.value)} />
+                      <span>Both</span>
+                    </label>
+                    <label className="radio-label">
+                      <input type="radio" name="modalConstraintType" value="substation" checked={constraintType === 'substation'} onChange={(e) => setConstraintType(e.target.value)} />
+                      <span>Substation</span>
+                    </label>
+                    <label className="radio-label">
+                      <input type="radio" name="modalConstraintType" value="branch" checked={constraintType === 'branch'} onChange={(e) => setConstraintType(e.target.value)} />
+                      <span>Branch</span>
+                    </label>
+                  </div>
+                </div>
+                
+                <div className="filter-group">
+                  <label className="filter-label">Search Filter</label>
+                  <input type="text" className="search-input" placeholder="Bus, line, contingency, facility..." value={busSearch} onChange={(e) => setBusSearch(e.target.value)} />
                 </div>
               </div>
               
-              <div className="filter-group">
-                <label className="filter-label">Search</label>
-                <input type="text" className="search-input" placeholder="e.g., Mystic, 115 kV, Line 1234" value={busSearch} onChange={(e) => setBusSearch(e.target.value)} />
-              </div>
-            </div>
-            
-            <div className="modal-body">
-              <div className="modal-table-info">
-                <span>{constraints.length} constraint rows</span>
-              </div>
-              <div className="modal-table-container">
-                {constraintsLoading ? (
-                  <div className="loading-indicator">Loading...</div>
-                ) : constraints.length === 0 ? (
-                  <div className="empty-state">Select scenarios to view constraints</div>
-                ) : (
-                  <table className="constraints-table-full">
-                    <thead>
-                      <tr>
-                        <th>Source</th>
-                        <th>Sink</th>
-                        <th>Scenario</th>
-                        <th>Max Power (MW)</th>
-                        <th>Monitored Facility</th>
-                        <th>From Bus #</th>
-                        <th>From Bus Name</th>
-                        <th>To Bus #</th>
-                        <th>To Bus Name</th>
-                        <th>Circuit</th>
-                        <th>Voltage (KV)</th>
-                        <th>Area</th>
-                        <th>Zone</th>
-                        <th>Power Withdrawal (MW)</th>
-                        <th>Distribution Factor</th>
-                        <th>Binding Contingency</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {constraints.map((constraint, idx) => (
-                        <tr key={idx}>
-                          <td>{constraint.Source || '-'}</td>
-                          <td>{constraint.Sink || '-'}</td>
-                          <td>{constraint.scenario}</td>
-                          <td>{constraint['Maximum Power Withdrawal (MW)'] || '-'}</td>
-                          <td>{constraint['Monitored Facility'] || '-'}</td>
-                          <td>{constraint['From Bus Number Monitored Facility'] || '-'}</td>
-                          <td>{constraint['From Bus Model Identifier Monitored Facility'] || '-'}</td>
-                          <td>{constraint['To Bus Number Monitored Facility'] || '-'}</td>
-                          <td>{constraint['To Bus Model Identifier Monitored Facility'] || '-'}</td>
-                          <td>{constraint.Circuit || '-'}</td>
-                          <td>{constraint['Voltage (KV) Monitored Facility'] || '-'}</td>
-                          <td>{constraint['Area Monitored Facility'] || '-'}</td>
-                          <td>{constraint['Zone Monitored Facility'] || '-'}</td>
-                          <td>{constraint['Power Withdrawal (MW)'] || '-'}</td>
-                          <td>{constraint['Distribution Factor (Dfax)'] || '-'}</td>
-                          <td>{constraint['Binding Contingency'] || '-'}</td>
+              {/* Table Container */}
+              <div className="constraint-table-wrapper">
+                <div className="constraint-table-toolbar">
+                  <div className="constraint-row-count">
+                    Showing <strong>{constraints.length}</strong> constraint rows across selected scenarios
+                  </div>
+                </div>
+                
+                <div className="constraint-table-scroll">
+                  {constraintsLoading ? (
+                    <div className="modal-loading">
+                      <div className="modal-loading-spinner"></div>
+                      <div className="modal-loading-text">Loading constraint data...</div>
+                    </div>
+                  ) : constraints.length === 0 ? (
+                    <div className="constraint-empty-state">
+                      <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                        <path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z"/>
+                      </svg>
+                      <p>No constraints available</p>
+                      <p style={{fontSize: '13px', marginTop: '8px'}}>Select scenarios above to view constraint data</p>
+                    </div>
+                  ) : (
+                    <table className="constraint-table-modern">
+                      <thead>
+                        <tr>
+                          <th>Source</th>
+                          <th>Sink</th>
+                          <th>Scenario</th>
+                          <th>Max Power (MW)</th>
+                          <th>Monitored Facility</th>
+                          <th>From Bus #</th>
+                          <th>From Bus Name</th>
+                          <th>To Bus #</th>
+                          <th>To Bus Name</th>
+                          <th>Circuit</th>
+                          <th>Voltage (KV)</th>
+                          <th>Area</th>
+                          <th>Zone</th>
+                          <th>Power (MW)</th>
+                          <th>Dist. Factor</th>
+                          <th>Binding Contingency</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
+                      </thead>
+                      <tbody>
+                        {constraints.map((constraint, idx) => (
+                          <tr key={idx}>
+                            <td>{constraint.Source || '-'}</td>
+                            <td>{constraint.Sink || '-'}</td>
+                            <td><span className="scenario-badge-modern">{constraint.scenario}</span></td>
+                            <td>{constraint['Maximum Power Withdrawal (MW)'] || '-'}</td>
+                            <td>{constraint['Monitored Facility'] || '-'}</td>
+                            <td>{constraint['From Bus Number Monitored Facility'] || '-'}</td>
+                            <td>{constraint['From Bus Model Identifier Monitored Facility'] || '-'}</td>
+                            <td>{constraint['To Bus Number Monitored Facility'] || '-'}</td>
+                            <td>{constraint['To Bus Model Identifier Monitored Facility'] || '-'}</td>
+                            <td>{constraint.Circuit || '-'}</td>
+                            <td>{constraint['Voltage (KV) Monitored Facility'] || '-'}</td>
+                            <td>{constraint['Area Monitored Facility'] || '-'}</td>
+                            <td>{constraint['Zone Monitored Facility'] || '-'}</td>
+                            <td>{constraint['Power Withdrawal (MW)'] || '-'}</td>
+                            <td>{constraint['Distribution Factor (Dfax)'] || '-'}</td>
+                            <td>{constraint['Binding Contingency'] || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
               </div>
             </div>
           </div>
         </div>
       )}
       
-      {/* Bus Dashboard Modal */}
+      {/* Bus Dashboard Modal - Modern Design */}
       {showDashboardModal && (
-        <div className="fullscreen-modal" onClick={() => setShowDashboardModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Bus Dashboard - Full View</h2>
-              <button className="modal-close" onClick={() => setShowDashboardModal(false)}>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <div className="dashboard-modal-overlay" onClick={() => setShowDashboardModal(false)}>
+          <div className="dashboard-modal-window" onClick={(e) => e.stopPropagation()}>
+            <div className="dashboard-modal-header">
+              <div className="modal-header-left">
+                <div className="modal-icon-wrapper dashboard-icon">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2">
+                    <path d="M3 13l4-4 4 4 10-10"/>
+                    <path d="M21 3v6h-6"/>
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="modal-title">System Performance Dashboard</h2>
+                  <p className="modal-subtitle">Real-time metrics, analytics, and system health monitoring</p>
+                </div>
+              </div>
+              <button className="dashboard-modal-close" onClick={() => setShowDashboardModal(false)}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <line x1="18" y1="6" x2="6" y2="18"/>
                   <line x1="6" y1="6" x2="18" y2="18"/>
                 </svg>
               </button>
             </div>
-            <div className="modal-body">
-              <div className="dashboard-grid-full">
-                {/* Large LMP Analysis Card */}
-                <div className="dashboard-card-large" style={{gridColumn: 'span 2'}}>
-                  <h3>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" style={{display: 'inline', marginRight: '8px', verticalAlign: 'middle'}}>
+            
+            <div className="dashboard-modal-body">
+              <div className="dashboard-grid-modern">
+                {/* LMP Analysis Card - Large */}
+                <div className="dashboard-card-modern large-card">
+                  <h3 className="dashboard-card-title">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2">
                       <line x1="12" y1="1" x2="12" y2="23"/>
                       <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
                     </svg>
                     Locational Marginal Pricing (LMP) Analysis
                   </h3>
-                  <div className="stat-grid-horizontal" style={{marginBottom: '24px'}}>
-                    <div className="stat-item-compact">
-                      <span className="stat-label-small">Average LMP (2024)</span>
-                      <span className="stat-value-large">$45.23</span>
-                      <span className="stat-label-small" style={{color: '#10b981'}}>+5.2% vs 2023</span>
+                  <div className="stats-grid-modern">
+                    <div className="stat-card-modern">
+                      <span className="stat-label-modern">Avg LMP 2024</span>
+                      <span className="stat-value-modern">$45.23</span>
+                      <span className="stat-change-modern positive">+5.2% vs 2023</span>
                     </div>
-                    <div className="stat-item-compact">
-                      <span className="stat-label-small">Peak LMP</span>
-                      <span className="stat-value-large" style={{color: '#ef4444'}}>$127.50</span>
-                      <span className="stat-label-small">Aug 15, 2024 15:00</span>
+                    <div className="stat-card-modern">
+                      <span className="stat-label-modern">Peak LMP</span>
+                      <span className="stat-value-modern" style={{color: '#ef4444'}}>$127.50</span>
+                      <span className="stat-change-modern">Aug 15, 15:00</span>
                     </div>
-                    <div className="stat-item-compact">
-                      <span className="stat-label-small">Min LMP</span>
-                      <span className="stat-value-large" style={{color: '#10b981'}}>$18.75</span>
-                      <span className="stat-label-small">Apr 3, 2024 03:00</span>
+                    <div className="stat-card-modern">
+                      <span className="stat-label-modern">Min LMP</span>
+                      <span className="stat-value-modern" style={{color: '#10b981'}}>$18.75</span>
+                      <span className="stat-change-modern">Apr 3, 03:00</span>
                     </div>
-                    <div className="stat-item-compact">
-                      <span className="stat-label-small">Std Deviation</span>
-                      <span className="stat-value-large">$12.34</span>
-                      <span className="stat-label-small">Moderate Volatility</span>
+                    <div className="stat-card-modern">
+                      <span className="stat-label-modern">Std Deviation</span>
+                      <span className="stat-value-modern">$12.34</span>
+                      <span className="stat-change-modern">Moderate</span>
                     </div>
                   </div>
-                  <div className="large-line-chart">
+                  <div className="chart-container-modern">
+                    <div className="chart-title-modern">Annual LMP Trend Comparison</div>
                     <svg viewBox="0 0 800 200" style={{width: '100%', height: '200px'}}>
                       {/* Grid lines */}
                       <line x1="50" y1="20" x2="750" y2="20" stroke="#e2e8f0" strokeWidth="1"/>
