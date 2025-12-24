@@ -1,85 +1,149 @@
 import { useState, useEffect } from 'react';
 import './Analytics.css';
+import { gridDataAPI } from '../services/api';
 
 const Analytics = () => {
-  const [activeFuelTab, setActiveFuelTab] = useState('Coal');
+  const [activeFuelTab, setActiveFuelTab] = useState('Wind');
   const [showAddFuelModal, setShowAddFuelModal] = useState(false);
   const [newFuelType, setNewFuelType] = useState('');
   
   // Dashboard panels configuration with dimensions (2x2 grid layout)
   const [panels, setPanels] = useState([
-    { id: 1, chartType: null, dataSource: null, title: 'Panel 1', width: 50, height: 50, row: 0, col: 0 },
-    { id: 2, chartType: null, dataSource: null, title: 'Panel 2', width: 50, height: 50, row: 0, col: 1 },
-    { id: 3, chartType: null, dataSource: null, title: 'Panel 3', width: 50, height: 50, row: 1, col: 0 },
-    { id: 4, chartType: null, dataSource: null, title: 'Panel 4', width: 50, height: 50, row: 1, col: 1 }
+    { id: 1, title: 'Panel 1', width: 50, height: 50, row: 0, col: 0, config: null },
+    { id: 2, title: 'Panel 2', width: 50, height: 50, row: 0, col: 1, config: null },
+    { id: 3, title: 'Panel 3', width: 50, height: 50, row: 1, col: 0, config: null },
+    { id: 4, title: 'Panel 4', width: 50, height: 50, row: 1, col: 1, config: null }
   ]);
   
   // Resizable panel state
   const [resizing, setResizing] = useState(null); // { panelId, edge, startX, startY, startWidth, startHeight }
   const [containerRect, setContainerRect] = useState(null);
   
-  // Fuel types
+  // Energy resource types (Task 4: Only Wind, Solar, Data Center, Storage)
   const [fuelTypes, setFuelTypes] = useState([
-    'Coal', 'Natural Gas', 'Nuclear', 'Hydro', 'Wind', 'Solar', 'Biomass'
+    'Wind', 'Solar', 'Data Center', 'Storage'
   ]);
   
   // Chart configuration modal
   const [activePanel, setActivePanel] = useState(null);
   const [showConfigModal, setShowConfigModal] = useState(false);
   
-  // Available chart types
+  // Available chart types (Task 3: More graph types with names displayed below)
   const chartTypes = [
-    { id: 'bar', name: 'Bar Chart', icon: '📊', supportsSecondaryAxis: true },
-    { id: 'line', name: 'Line Chart', icon: '📈', supportsSecondaryAxis: true },
-    { id: 'pie', name: 'Pie Chart', icon: '🥧', supportsSecondaryAxis: false },
-    { id: 'area', name: 'Area Chart', icon: '📉', supportsSecondaryAxis: true },
-    { id: 'scatter', name: 'Scatter Plot', icon: '⚫', supportsSecondaryAxis: true },
-    { id: 'table', name: 'Data Table', icon: '📋', supportsSecondaryAxis: false },
-    { id: 'gauge', name: 'Gauge', icon: '⏱️', supportsSecondaryAxis: false },
-    { id: 'map', name: 'Heat Map', icon: '🗺️', supportsSecondaryAxis: false },
-    { id: 'combo', name: 'Combo Chart', icon: '📊📈', supportsSecondaryAxis: true }
+    { id: 'bar', name: 'Bar', svg: '<rect x="3" y="8" width="3" height="8"/><rect x="8" y="5" width="3" height="11"/><rect x="13" y="2" width="3" height="14"/>', supportsSecondaryAxis: true },
+    { id: 'line', name: 'Line', svg: '<polyline points="2,14 6,10 10,12 14,6 18,8" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="2" cy="14" r="1.5"/><circle cx="6" cy="10" r="1.5"/><circle cx="10" cy="12" r="1.5"/><circle cx="14" cy="6" r="1.5"/><circle cx="18" cy="8" r="1.5"/>', supportsSecondaryAxis: true },
+    { id: 'pie', name: 'Pie', svg: '<circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10,2 A8,8 0 0,1 18,10 L10,10 Z" fill="currentColor" opacity="0.3"/>', supportsSecondaryAxis: false },
+    { id: 'area', name: 'Area', svg: '<path d="M2,14 L5,10 L9,12 L13,6 L17,8 L17,16 L2,16 Z" fill="currentColor" opacity="0.3"/><polyline points="2,14 5,10 9,12 13,6 17,8" fill="none" stroke="currentColor" stroke-width="2"/>', supportsSecondaryAxis: true },
+    { id: 'scatter', name: 'Scatter', svg: '<circle cx="3" cy="14" r="1.5"/><circle cx="6" cy="8" r="1.5"/><circle cx="9" cy="11" r="1.5"/><circle cx="12" cy="5" r="1.5"/><circle cx="15" cy="9" r="1.5"/><circle cx="17" cy="13" r="1.5"/>', supportsSecondaryAxis: true },
+    { id: 'combo', name: 'Combo', svg: '<rect x="3" y="10" width="2.5" height="6"/><rect x="7" y="7" width="2.5" height="9"/><polyline points="11,6 13.5,4 16,8" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="11" cy="6" r="1"/><circle cx="13.5" cy="4" r="1"/><circle cx="16" cy="8" r="1"/>', supportsSecondaryAxis: true },
+    { id: 'stacked-bar', name: 'Stacked Bar', svg: '<rect x="3" y="6" width="3" height="4" fill="currentColor"/><rect x="3" y="10" width="3" height="6" opacity="0.6"/><rect x="8" y="4" width="3" height="5" fill="currentColor"/><rect x="8" y="9" width="3" height="7" opacity="0.6"/><rect x="13" y="8" width="3" height="3" fill="currentColor"/><rect x="13" y="11" width="3" height="5" opacity="0.6"/>', supportsSecondaryAxis: false },
+    { id: 'stacked-area', name: 'Stacked Area', svg: '<path d="M2,16 L5,12 L9,13 L13,10 L17,11 L17,16 Z" fill="currentColor" opacity="0.5"/><path d="M2,10 L5,8 L9,9 L13,6 L17,7 L17,11 L13,10 L9,13 L5,12 L2,16 Z" fill="currentColor" opacity="0.3"/>', supportsSecondaryAxis: false },
+    { id: 'horizontal-bar', name: 'Horizontal Bar', svg: '<rect x="2" y="3" width="8" height="3"/><rect x="2" y="8" width="11" height="3"/><rect x="2" y="13" width="14" height="3"/>', supportsSecondaryAxis: true },
+    { id: 'table', name: 'Table', svg: '<rect x="2" y="2" width="16" height="3" fill="currentColor" opacity="0.3"/><line x1="2" y1="5" x2="18" y2="5" stroke="currentColor" stroke-width="1"/><line x1="2" y1="8" x2="18" y2="8" stroke="currentColor" stroke-width="0.5"/><line x1="2" y1="11" x2="18" y2="11" stroke="currentColor" stroke-width="0.5"/><line x1="2" y1="14" x2="18" y2="14" stroke="currentColor" stroke-width="0.5"/><line x1="7" y1="2" x2="7" y2="16" stroke="currentColor" stroke-width="0.5"/><line x1="13" y1="2" x2="13" y2="16" stroke="currentColor" stroke-width="0.5"/>', supportsSecondaryAxis: false },
+    { id: 'gauge', name: 'Gauge', svg: '<path d="M4,14 A6,6 0 1,1 16,14" fill="none" stroke="currentColor" stroke-width="2"/><line x1="10" y1="10" x2="13" y2="7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="10" cy="10" r="1.5" fill="currentColor"/>', supportsSecondaryAxis: false },
+    { id: 'donut', name: 'Donut', svg: '<circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="4"/><path d="M10,3 A7,7 0 0,1 17,10" fill="none" stroke="currentColor" stroke-width="4" opacity="0.5"/><circle cx="10" cy="10" r="4" fill="white"/>', supportsSecondaryAxis: false },
+    { id: 'heatmap', name: 'Heatmap', svg: '<rect x="2" y="2" width="3" height="3" fill="currentColor" opacity="0.8"/><rect x="6" y="2" width="3" height="3" opacity="0.4"/><rect x="10" y="2" width="3" height="3" opacity="0.6"/><rect x="14" y="2" width="3" height="3" opacity="0.3"/><rect x="2" y="6" width="3" height="3" opacity="0.5"/><rect x="6" y="6" width="3" height="3" opacity="0.9"/><rect x="10" y="6" width="3" height="3" opacity="0.7"/><rect x="14" y="6" width="3" height="3" opacity="0.4"/><rect x="2" y="10" width="3" height="3" opacity="0.6"/><rect x="6" y="10" width="3" height="3" opacity="0.5"/><rect x="10" y="10" width="3" height="3" opacity="0.8"/><rect x="14" y="10" width="3" height="3" opacity="0.6"/>', supportsSecondaryAxis: false },
+    { id: 'waterfall', name: 'Waterfall', svg: '<rect x="2" y="8" width="3" height="8" fill="currentColor" opacity="0.7"/><line x1="5" y1="8" x2="7" y2="6" stroke="currentColor" stroke-width="1" stroke-dasharray="1,1"/><rect x="7" y="6" width="3" height="4" fill="currentColor" opacity="0.5"/><line x1="10" y1="6" x2="12" y2="10" stroke="currentColor" stroke-width="1" stroke-dasharray="1,1"/><rect x="12" y="10" width="3" height="6" fill="currentColor" opacity="0.7"/>', supportsSecondaryAxis: false },
+    { id: 'funnel', name: 'Funnel', svg: '<path d="M4,2 L16,2 L14,7 L6,7 Z" fill="currentColor" opacity="0.8"/><path d="M6,7 L14,7 L12.5,11 L7.5,11 Z" fill="currentColor" opacity="0.6"/><path d="M7.5,11 L12.5,11 L11,16 L9,16 Z" fill="currentColor" opacity="0.4"/>', supportsSecondaryAxis: false },
+    { id: 'radar', name: 'Radar', svg: '<polygon points="10,3 16,7 14,14 6,14 4,7" fill="currentColor" opacity="0.2" stroke="currentColor" stroke-width="1"/><polygon points="10,6 13,8 12,12 8,12 7,8" fill="currentColor" opacity="0.3"/><line x1="10" y1="10" x2="10" y2="3" stroke="currentColor" stroke-width="0.5"/><line x1="10" y1="10" x2="16" y2="7" stroke="currentColor" stroke-width="0.5"/><line x1="10" y1="10" x2="14" y2="14" stroke="currentColor" stroke-width="0.5"/><line x1="10" y1="10" x2="6" y2="14" stroke="currentColor" stroke-width="0.5"/><line x1="10" y1="10" x2="4" y2="7" stroke="currentColor" stroke-width="0.5"/>', supportsSecondaryAxis: false },
+    { id: 'bubble', name: 'Bubble', svg: '<circle cx="4" cy="13" r="2" opacity="0.7"/><circle cx="9" cy="9" r="3" opacity="0.6"/><circle cx="14" cy="7" r="2.5" opacity="0.7"/><circle cx="17" cy="12" r="1.5" opacity="0.8"/>', supportsSecondaryAxis: true },
+    { id: 'treemap', name: 'Treemap', svg: '<rect x="2" y="2" width="8" height="8" fill="currentColor" opacity="0.7"/><rect x="11" y="2" width="7" height="5" fill="currentColor" opacity="0.5"/><rect x="11" y="8" width="7" height="5" fill="currentColor" opacity="0.6"/><rect x="2" y="11" width="4" height="5" fill="currentColor" opacity="0.4"/><rect x="7" y="11" width="3" height="5" fill="currentColor" opacity="0.8"/>', supportsSecondaryAxis: false },
+    { id: 'box-plot', name: 'Box Plot', svg: '<rect x="3" y="6" width="4" height="8" fill="none" stroke="currentColor" stroke-width="1"/><line x1="3" y1="10" x2="7" y2="10" stroke="currentColor" stroke-width="1.5"/><line x1="5" y1="4" x2="5" y2="6" stroke="currentColor" stroke-width="1"/><line x1="5" y1="14" x2="5" y2="16" stroke="currentColor" stroke-width="1"/><rect x="10" y="5" width="4" height="9" fill="none" stroke="currentColor" stroke-width="1"/><line x1="10" y1="9" x2="14" y2="9" stroke="currentColor" stroke-width="1.5"/><line x1="12" y1="3" x2="12" y2="5" stroke="currentColor" stroke-width="1"/><line x1="12" y1="14" x2="12" y2="16" stroke="currentColor" stroke-width="1"/>', supportsSecondaryAxis: false },
+    { id: 'violin', name: 'Violin', svg: '<path d="M5,2 Q3,10 5,18 Q7,10 5,2" fill="currentColor" opacity="0.3" stroke="currentColor" stroke-width="1"/><line x1="5" y1="2" x2="5" y2="18" stroke="currentColor" stroke-width="1"/><path d="M12,3 Q10,10 12,17 Q14,10 12,3" fill="currentColor" opacity="0.3" stroke="currentColor" stroke-width="1"/><line x1="12" y1="3" x2="12" y2="17" stroke="currentColor" stroke-width="1"/>', supportsSecondaryAxis: false },
+    { id: 'sankey', name: 'Sankey', svg: '<path d="M2,5 Q10,5 10,8 Q10,11 18,11" fill="none" stroke="currentColor" stroke-width="3" opacity="0.5"/><path d="M2,8 Q10,8 10,11 Q10,14 18,14" fill="none" stroke="currentColor" stroke-width="2" opacity="0.6"/><path d="M2,11 Q10,11 10,14 Q10,16 18,16" fill="none" stroke="currentColor" stroke-width="2" opacity="0.4"/>', supportsSecondaryAxis: false },
+    { id: 'network', name: 'Network', svg: '<circle cx="10" cy="5" r="2" fill="currentColor"/><circle cx="4" cy="12" r="1.5" fill="currentColor"/><circle cx="10" cy="15" r="1.5" fill="currentColor"/><circle cx="16" cy="12" r="1.5" fill="currentColor"/><line x1="10" y1="7" x2="4" y2="11" stroke="currentColor" stroke-width="1" opacity="0.5"/><line x1="10" y1="7" x2="16" y2="11" stroke="currentColor" stroke-width="1" opacity="0.5"/><line x1="4" y1="12" x2="10" y2="14" stroke="currentColor" stroke-width="1" opacity="0.5"/><line x1="16" y1="12" x2="10" y2="14" stroke="currentColor" stroke-width="1" opacity="0.5"/>', supportsSecondaryAxis: false },
+    { id: 'candlestick', name: 'Candlestick', svg: '<line x1="4" y1="3" x2="4" y2="16" stroke="currentColor" stroke-width="0.5"/><rect x="3" y="6" width="2" height="6" fill="currentColor"/><line x1="9" y1="5" x2="9" y2="15" stroke="currentColor" stroke-width="0.5"/><rect x="8" y="8" width="2" height="4" fill="none" stroke="currentColor" stroke-width="1"/><line x1="14" y1="4" x2="14" y2="14" stroke="currentColor" stroke-width="0.5"/><rect x="13" y="7" width="2" height="5" fill="currentColor"/>', supportsSecondaryAxis: false },
+    { id: 'histogram', name: 'Histogram', svg: '<rect x="2" y="10" width="2.5" height="6"/><rect x="5" y="7" width="2.5" height="9"/><rect x="8" y="4" width="2.5" height="12"/><rect x="11" y="6" width="2.5" height="10"/><rect x="14" y="9" width="2.5" height="7"/><rect x="17" y="12" width="2.5" height="4"/>', supportsSecondaryAxis: true },
+    { id: 'polar', name: 'Polar', svg: '<circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="0.5" opacity="0.3"/><circle cx="10" cy="10" r="5" fill="none" stroke="currentColor" stroke-width="0.5" opacity="0.3"/><path d="M10,2 L12,8 L10,10 Z" fill="currentColor" opacity="0.6"/><path d="M14,4 L16,9 L10,10 Z" fill="currentColor" opacity="0.7"/><path d="M17,8 L15,12 L10,10 Z" fill="currentColor" opacity="0.5"/><path d="M16,13 L12,14 L10,10 Z" fill="currentColor" opacity="0.6"/>', supportsSecondaryAxis: false }
   ];
   
-  // Available data sources (Database tables/views)
-  const dataSources = [
-    'LMP Historical Data',
-    'Generation by Fuel Type',
-    'Load Forecast',
-    'Capacity Utilization',
-    'Efficiency Metrics',
-    'Cost Analysis',
-    'Emissions Data',
-    'Real-time Power Flow'
+  // Available databases (Task 1: Only database files)
+  const availableDatabases = [
+    { id: 'gridsense_iso_ne.db', name: 'gridsense_iso_ne.db' },
+    { id: 'economic_data.db', name: 'economic_data.db' },
+    { id: 'operational_data.db', name: 'operational_data.db' },
+    { id: 'environmental_data.db', name: 'environmental_data.db' },
+    { id: 'asset_management.db', name: 'asset_management.db' },
+    { id: 'market_data.db', name: 'market_data.db' },
+    { id: 'weather_data.db', name: 'weather_data.db' },
+    { id: 'reliability_metrics.db', name: 'reliability_metrics.db' }
   ];
   
-  // Available database fields for configuration
+  // Selected database (Task 2: No table dropdown needed)
+  const [selectedDatabase, setSelectedDatabase] = useState('gridsense_iso_ne.db');
+  
+  // Available database fields for configuration (Task 3: All attributes from selected database/table)
   const availableFields = {
     dimensions: [
+      // Buses table - Categorical dimensions
       { id: 'bus_id', name: 'Bus ID', table: 'buses', type: 'categorical' },
+      { id: 'bus_model_id', name: 'Bus Model ID', table: 'buses', type: 'categorical' },
       { id: 'bus_name', name: 'Bus Name', table: 'buses', type: 'categorical' },
+      { id: 'bus_name_econ', name: 'Bus Name (Economic)', table: 'buses', type: 'categorical' },
+      { id: 'area', name: 'Area', table: 'buses', type: 'categorical' },
+      { id: 'area_econ', name: 'Area (Economic)', table: 'buses', type: 'categorical' },
+      { id: 'zone', name: 'Zone', table: 'buses', type: 'categorical' },
       { id: 'state', name: 'State', table: 'buses', type: 'categorical' },
       { id: 'county', name: 'County', table: 'buses', type: 'categorical' },
-      { id: 'voltage', name: 'Voltage Level', table: 'buses', type: 'categorical' },
+      { id: 'iso', name: 'ISO', table: 'buses', type: 'categorical' },
+      { id: 'confidence_level', name: 'Confidence Level', table: 'buses', type: 'categorical' },
+      { id: 'pre_existing_issues_substation_discharging', name: 'Pre-existing Issues (Discharging)', table: 'buses', type: 'categorical' },
+      { id: 'pre_existing_issues_substation_charging', name: 'Pre-existing Issues (Charging)', table: 'buses', type: 'categorical' },
+      // Generators
       { id: 'fuel_type', name: 'Fuel Type', table: 'generators', type: 'categorical' },
       { id: 'generator_name', name: 'Generator Name', table: 'generators', type: 'categorical' },
+      { id: 'generator_type', name: 'Generator Type', table: 'generators', type: 'categorical' },
+      // Temporal dimensions
       { id: 'date', name: 'Date', table: 'all', type: 'temporal' },
       { id: 'year', name: 'Year', table: 'all', type: 'temporal' },
       { id: 'month', name: 'Month', table: 'all', type: 'temporal' },
+      { id: 'quarter', name: 'Quarter', table: 'all', type: 'temporal' },
       { id: 'hour', name: 'Hour', table: 'all', type: 'temporal' },
+      { id: 'day_of_week', name: 'Day of Week', table: 'all', type: 'temporal' },
+      // Constraints
       { id: 'scenario', name: 'Scenario', table: 'constraints', type: 'categorical' },
       { id: 'status', name: 'Status', table: 'branches', type: 'categorical' }
     ],
     measures: [
-      { id: 'lmp_2024', name: 'LMP 2024', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
-      { id: 'lmp_2023', name: 'LMP 2023', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
+      // LMP Data from buses table
+      { id: 'historical_average_lmp_2022', name: 'LMP 2022 (Avg)', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
+      { id: 'historical_average_lmp_2023', name: 'LMP 2023 (Avg)', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
+      { id: 'historical_average_lmp_2024', name: 'LMP 2024 (Avg)', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
+      { id: 'historical_average_lmp_2025', name: 'LMP 2025 (Avg)', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
+      { id: 'historical_average_lmp', name: 'LMP (Historical Avg)', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
+      // Congestion components
+      { id: 'average_congestion_component_in_lmp_2022', name: 'Congestion Component 2022', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
+      { id: 'average_congestion_component_in_lmp_2023', name: 'Congestion Component 2023', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
+      { id: 'average_congestion_component_in_lmp_2024', name: 'Congestion Component 2024', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
+      { id: 'average_congestion_component_in_lmp_2025', name: 'Congestion Component 2025', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
+      { id: 'average_congestion_component_in_lmp', name: 'Congestion Component (Avg)', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
+      // Loss components
+      { id: 'average_loss_component_in_lmp_2022', name: 'Loss Component 2022', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
+      { id: 'average_loss_component_in_lmp_2023', name: 'Loss Component 2023', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
+      { id: 'average_loss_component_in_lmp_2024', name: 'Loss Component 2024', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
+      { id: 'average_loss_component_in_lmp_2025', name: 'Loss Component 2025', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
+      // Voltage and capacity
+      { id: 'nominal_voltage', name: 'Nominal Voltage (kV)', table: 'buses', type: 'numeric', aggregation: ['avg', 'min', 'max'] },
+      { id: 'nominal_voltage_econ', name: 'Nominal Voltage (Economic)', table: 'buses', type: 'numeric', aggregation: ['avg', 'min', 'max'] },
+      { id: 'headroom_capacity_substation_discharging', name: 'Headroom Capacity (Discharging)', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
+      { id: 'headroom_capacity_substation_charging', name: 'Headroom Capacity (Charging)', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
+      // Short circuit
+      { id: '3_phase_short_circuit', name: '3-Phase Short Circuit (MVA)', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
+      { id: '3_phase_short_circuit_current', name: '3-Phase Short Circuit Current (A)', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
+      // Geographic
+      { id: 'latitude', name: 'Latitude', table: 'buses', type: 'numeric', aggregation: ['avg', 'min', 'max'] },
+      { id: 'longitude', name: 'Longitude', table: 'buses', type: 'numeric', aggregation: ['avg', 'min', 'max'] },
+      { id: 'fips_code', name: 'FIPS Code', table: 'buses', type: 'numeric', aggregation: ['count'] },
+      // Generation metrics
       { id: 'capacity_mw', name: 'Capacity (MW)', table: 'generators', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
       { id: 'generation_mw', name: 'Generation (MW)', table: 'generators', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
-      { id: 'load_mw', name: 'Load (MW)', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
-      { id: 'short_circuit', name: 'Short Circuit (MVA)', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
-      { id: 'power_flow', name: 'Power Flow (MW)', table: 'branches', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
       { id: 'efficiency', name: 'Efficiency (%)', table: 'generators', type: 'numeric', aggregation: ['avg', 'min', 'max'] },
       { id: 'utilization', name: 'Utilization (%)', table: 'generators', type: 'numeric', aggregation: ['avg', 'min', 'max'] },
       { id: 'emissions', name: 'Emissions (tons)', table: 'generators', type: 'numeric', aggregation: ['sum', 'avg'] },
+      // Branches
+      { id: 'power_flow', name: 'Power Flow (MW)', table: 'branches', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
+      // General
+      { id: 'load_mw', name: 'Load (MW)', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
       { id: 'cost', name: 'Cost ($)', table: 'all', type: 'numeric', aggregation: ['sum', 'avg', 'min', 'max'] },
       { id: 'count', name: 'Count', table: 'all', type: 'numeric', aggregation: ['count'] }
     ]
@@ -101,26 +165,139 @@ const Analytics = () => {
     showGridLines: true
   });
   
-  // Generate sample data based on configuration
-  const generateSampleData = (config) => {
-    if (!config || !config.xAxis || config.primaryYAxis.length === 0) return [];
+  // Real database data
+  const [databaseData, setDatabaseData] = useState({});
+  const [loading, setLoading] = useState(false);
+  
+  // Fetch data from gridsense_iso_ne.db
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        // Fetch buses data first (primary data source)
+        const response = await gridDataAPI.getBuses();
+        console.log('API Response:', response);
+        const busesData = response?.data?.data || response?.data || [];
+        console.log('Fetched buses data:', busesData.length, 'records');
+        
+        setDatabaseData({
+          buses: busesData
+        });
+      } catch (error) {
+        console.error('Error fetching database data:', error);
+        setDatabaseData({ buses: [] });
+      } finally {
+        setLoading(false);
+      }
+    };
     
-    const categories = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'];
-    return categories.map(cat => {
-      const dataPoint = { category: cat };
+    fetchData();
+  }, []);
+  
+  // Get real data from database based on configuration
+  const getRealData = (config) => {
+    console.log('getRealData called with config:', config);
+    console.log('Database data buses:', databaseData?.buses?.length);
+    
+    if (!config || !config.xAxis || config.primaryYAxis.length === 0) {
+      console.log('Config validation failed');
+      return [];
+    }
+    
+    if (!databaseData || !databaseData.buses || !Array.isArray(databaseData.buses) || databaseData.buses.length === 0) {
+      console.log('No buses data available or not an array');
+      return [];
+    }
+    
+    // Use buses data as the primary source from gridsense_iso_ne.db
+    const sourceData = databaseData.buses;
+    
+    // Map field IDs to actual API column names
+    const fieldMapping = {
+      'historical_average_lmp_2022': 'lmp_2022',
+      'historical_average_lmp_2023': 'lmp_2023',
+      'historical_average_lmp_2024': 'lmp_2024',
+      'historical_average_lmp_2025': 'lmp_2025',
+      'nominal_voltage': 'base_kv'
+    };
+    
+    const getFieldValue = (row, fieldId) => {
+      const mappedId = fieldMapping[fieldId] || fieldId;
+      return row[mappedId];
+    };
+    
+    // Group data by x-axis field
+    const groupedData = {};
+    sourceData.forEach(row => {
+      const xValue = getFieldValue(row, config.xAxis.id) || 'Unknown';
+      if (!groupedData[xValue]) {
+        groupedData[xValue] = [];
+      }
+      groupedData[xValue].push(row);
+    });
+    
+    // Aggregate data based on configuration
+    return Object.keys(groupedData).map(xValue => {
+      const dataPoint = { category: xValue };
+      
+      // Calculate primary Y-axis values
       config.primaryYAxis.forEach(field => {
-        dataPoint[field.id] = Math.floor(Math.random() * 1000) + 200;
+        const values = groupedData[xValue]
+          .map(row => parseFloat(getFieldValue(row, field.id)) || 0)
+          .filter(v => !isNaN(v));
+        
+        if (values.length > 0) {
+          const aggregation = field.aggregation || 'sum';
+          if (aggregation === 'sum') {
+            dataPoint[field.id] = values.reduce((a, b) => a + b, 0);
+          } else if (aggregation === 'avg') {
+            dataPoint[field.id] = values.reduce((a, b) => a + b, 0) / values.length;
+          } else if (aggregation === 'min') {
+            dataPoint[field.id] = Math.min(...values);
+          } else if (aggregation === 'max') {
+            dataPoint[field.id] = Math.max(...values);
+          } else if (aggregation === 'count') {
+            dataPoint[field.id] = values.length;
+          }
+        } else {
+          dataPoint[field.id] = 0;
+        }
       });
+      
+      // Calculate secondary Y-axis values
       config.secondaryYAxis.forEach(field => {
-        dataPoint[field.id] = Math.floor(Math.random() * 100) + 10;
+        const values = groupedData[xValue]
+          .map(row => parseFloat(getFieldValue(row, field.id)) || 0)
+          .filter(v => !isNaN(v));
+        
+        if (values.length > 0) {
+          const aggregation = field.aggregation || 'sum';
+          if (aggregation === 'sum') {
+            dataPoint[field.id] = values.reduce((a, b) => a + b, 0);
+          } else if (aggregation === 'avg') {
+            dataPoint[field.id] = values.reduce((a, b) => a + b, 0) / values.length;
+          } else if (aggregation === 'min') {
+            dataPoint[field.id] = Math.min(...values);
+          } else if (aggregation === 'max') {
+            dataPoint[field.id] = Math.max(...values);
+          } else if (aggregation === 'count') {
+            dataPoint[field.id] = values.length;
+          }
+        } else {
+          dataPoint[field.id] = 0;
+        }
       });
+      
       return dataPoint;
     });
   };
   
   // Render chart based on configuration
   const renderChart = (panel) => {
+    console.log('renderChart called for panel:', panel.id, 'config:', panel.config);
+    
     if (!panel.config || !panel.config.chartType || !panel.config.xAxis || panel.config.primaryYAxis.length === 0) {
+      console.log('Panel missing config');
       return (
         <div className="panel-placeholder">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="2">
@@ -133,8 +310,33 @@ const Analytics = () => {
     }
     
     const config = panel.config;
-    const data = generateSampleData(config);
+    const data = getRealData(config);
     const chartType = config.chartType;
+    
+    console.log('Chart type:', chartType, 'Data length:', data.length);
+    
+    if (loading) {
+      return (
+        <div className="panel-placeholder">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="2">
+            <circle cx="12" cy="12" r="10"/>
+          </svg>
+          <p>Loading data...</p>
+        </div>
+      );
+    }
+    
+    if (data.length === 0) {
+      return (
+        <div className="panel-placeholder">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="2">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          <p>No data available</p>
+        </div>
+      );
+    }
     
     // Color schemes
     const colors = {
@@ -694,10 +896,10 @@ const Analytics = () => {
     if (panel && panel.config) {
       setPanelConfig(panel.config);
     } else {
-      // Reset to default
+      // Reset to default with current selected database
       setPanelConfig({
         chartType: null,
-        dataSource: null,
+        dataSource: selectedDatabase, // Initialize with current database selection
         xAxis: null,
         primaryYAxis: [],
         secondaryYAxis: [],
@@ -719,11 +921,15 @@ const Analytics = () => {
       ? `${chartTypes.find(c => c.id === panelConfig.chartType)?.name} - ${panelConfig.dataSource || 'No Data'}`
       : 'Unconfigured Panel';
     
+    console.log('Saving panel config:', panelConfig);
+    
     setPanels(panels.map(panel => 
       panel.id === activePanel 
-        ? { ...panel, config: panelConfig, title }
+        ? { ...panel, config: { ...panelConfig }, title }
         : panel
     ));
+    
+    console.log('Panel configuration saved');
     setShowConfigModal(false);
     setActivePanel(null);
   };
@@ -902,18 +1108,21 @@ const Analytics = () => {
                   <h3>Fields</h3>
                 </div>
                 
-                {/* Data Source Selector */}
+                {/* Data Source Selector (Task 1 & 2: Database files only, no table dropdown) */}
                 <div className="data-source-selector">
-                  <label>Data Source</label>
+                  <label>Database Source</label>
                   <select 
-                    value={panelConfig.dataSource || ''}
-                    onChange={(e) => setPanelConfig({ ...panelConfig, dataSource: e.target.value })}
+                    value={panelConfig.dataSource || selectedDatabase}
+                    onChange={(e) => {
+                      setSelectedDatabase(e.target.value);
+                      setPanelConfig({ ...panelConfig, dataSource: e.target.value });
+                    }}
                   >
-                    <option value="">Select data source...</option>
-                    {dataSources.map(source => (
-                      <option key={source} value={source}>{source}</option>
+                    {availableDatabases.map(db => (
+                      <option key={db.id} value={db.id}>{db.name}</option>
                     ))}
                   </select>
+                  <p className="data-source-info">All tables and attributes from selected database are available below</p>
                 </div>
                 
                 {/* Dimensions Section */}
@@ -983,7 +1192,7 @@ const Analytics = () => {
                   <h3>Visualization</h3>
                 </div>
                 
-                {/* Chart Type Selector */}
+                {/* Chart Type Selector (Task 3: Display names below icons) */}
                 <div className="chart-type-selector">
                   <div className="chart-type-grid">
                     {chartTypes.map(chart => (
@@ -993,7 +1202,8 @@ const Analytics = () => {
                         onClick={() => setPanelConfig({ ...panelConfig, chartType: chart.id })}
                         title={chart.name}
                       >
-                        <span className="chart-icon">{chart.icon}</span>
+                        <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" className="chart-icon" dangerouslySetInnerHTML={{__html: chart.svg}}></svg>
+                        <span className="chart-type-name">{chart.name}</span>
                       </button>
                     ))}
                   </div>
@@ -1238,7 +1448,7 @@ const Analytics = () => {
               <button 
                 className="btn-save" 
                 onClick={savePanelConfig}
-                disabled={!panelConfig.chartType || !panelConfig.dataSource}
+                disabled={!panelConfig.chartType || !panelConfig.dataSource || !panelConfig.xAxis || panelConfig.primaryYAxis.length === 0}
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <polyline points="20 6 9 17 4 12"/>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import useGridInfrastructure from '../hooks/useGridInfrastructure';
 import './Analysis.css';
 
@@ -13,8 +13,17 @@ const Analysis = () => {
   const [tempThreshold, setTempThreshold] = useState(200);
   const [busThreshold, setBusThreshold] = useState(200);
   const [tempBusThreshold, setTempBusThreshold] = useState(200);
-  const [selectedScenario, setSelectedScenario] = useState('summer-peak');
   const [headroomScenario, setHeadroomScenario] = useState('summer-peak');
+  
+  // Real metrics from backend
+  const [coverageMetrics, setCoverageMetrics] = useState({
+    iso_count: 0,
+    state_count: 0,
+    substation_count: 0,
+    total_headroom: 0,
+    buses_above_threshold: 0
+  });
+  const [metricsLoading, setMetricsLoading] = useState(true);
   
   // Tables state (admin editable)
   const [roadmapData, setRoadmapData] = useState([
@@ -29,12 +38,29 @@ const Analysis = () => {
     { iso: 'MISO', release_date: '2024-11-05 00:00:00', version: 'MISO_FTR_2029_beta', change_summary: 'Added preliminary nodal basis curves and constraint frequency estimates.', tags: 'basis, constraints' }
   ]);
   
-  // Calculate metrics
-  const totalSubstations = buses.length;
-  const busesAboveThreshold = buses.filter(bus => {
-    const lmpValue = parseFloat(bus.lmp_2025) || 0;
-    return lmpValue > busThreshold;
-  }).length;
+  // Fetch real coverage metrics from backend
+  useEffect(() => {
+    const fetchCoverageMetrics = async () => {
+      setMetricsLoading(true);
+      try {
+        const res = await fetch(`http://localhost:8000/grid-data/coverage-metrics?threshold=${voltageThreshold}`);
+        const data = await res.json();
+        if (data.success) {
+          setCoverageMetrics(data.data);
+        }
+      } catch (error) {
+        console.error('Error fetching coverage metrics:', error);
+      } finally {
+        setMetricsLoading(false);
+      }
+    };
+    
+    fetchCoverageMetrics();
+  }, [voltageThreshold]);
+  
+  // Calculate metrics (using real data from backend)
+  const totalSubstations = coverageMetrics.substation_count;
+  const busesAboveThreshold = coverageMetrics.buses_above_threshold;
   
   // Graph data states
   const [isoSummaryMetric, setIsoSummaryMetric] = useState('avg'); // avg, min, max
@@ -43,15 +69,23 @@ const Analysis = () => {
   const [constraintView, setConstraintView] = useState('preexisting');
   const [constraintScenario, setConstraintScenario] = useState('summer-peak');
   
-  const [queueStatus, setQueueStatus] = useState('active');
+  const [queueFuelType, setQueueFuelType] = useState('solar'); // Task 1
   
+  // NU Investment graph
   const [investmentYear, setInvestmentYear] = useState(1);
   
-  const [typicalDayISO, setTypicalDayISO] = useState('ISO-NE');
-  const [typicalDayScenario, setTypicalDayScenario] = useState('summer-peak');
+  // Typical Day Profile graph (separate from Typical Day LMP)
+  const [typicalDayProfileISO, setTypicalDayProfileISO] = useState('ISO-NE');
+  const [typicalDayProfileScenario, setTypicalDayProfileScenario] = useState('summer-peak');
+  
+  // Typical Day LMP graph (Task 3)
+  const [typicalDayMetric, setTypicalDayMetric] = useState('avg-future'); // min, max, avg-future, avg-historical
+  const [typicalDayLMPScenario, setTypicalDayLMPScenario] = useState('summer-peak');
   
   // Assumptions tab states
   const [powerFlowFuelType, setPowerFlowFuelType] = useState('all');
+  const [powerFlowScenario, setPowerFlowScenario] = useState('summer-peak'); // Task 5
+  const [powerFlowYear, setPowerFlowYear] = useState(2025); // Task 5
   const [lmpFuelType, setLmpFuelType] = useState('all');
   const [assumptionsData, setAssumptionsData] = useState({
     model: 'PCM 2030 Baseline',
@@ -62,7 +96,121 @@ const Analysis = () => {
   
   // Dummy data for graphs
   const isos = ['ISO-NE', 'PJM', 'MISO', 'CAISO', 'ERCOT', 'SPP', 'NYISO'];
-  const fuelTypes = ['All', 'Solar', 'Wind', 'Gas', 'Coal', 'Nuclear', 'Hydro'];
+  const fuelTypes = ['All', 'Solar', 'Wind', 'Gas', 'Coal', 'Nuclear', 'Hydro', 'Biomass', 'Geothermal', 'Oil', 'Battery Storage'];
+  const queueFuelTypes = ['Solar', 'Wind', 'Gas', 'Battery Storage', 'Nuclear', 'Hydro', 'Biomass'];
+  
+  // Memoized graph data - each graph gets its own stable dataset
+  const isoSummaryData = useMemo(() => 
+    isos.map(iso => ({
+      iso,
+      avg: 1200 + Math.random() * 800,
+      min: 800 + Math.random() * 400,
+      max: 1600 + Math.random() * 800
+    })), []);
+  
+  const constraintData = useMemo(() => 
+    isos.map(iso => ({
+      iso,
+      preexisting: 150 + Math.random() * 300,
+      new: 100 + Math.random() * 250
+    })), []);
+  
+  const queueData = useMemo(() => 
+    queueFuelTypes.reduce((acc, fuel) => {
+      acc[fuel.toLowerCase()] = isos.map(iso => ({
+        iso,
+        active: (30 + Math.random() * 50) * (fuel === 'Solar' ? 1.5 : fuel === 'Wind' ? 1.3 : 1),
+        withdrawn: (25 + Math.random() * 40) * (fuel === 'Solar' ? 1.5 : fuel === 'Wind' ? 1.3 : 1),
+        done: (20 + Math.random() * 35) * (fuel === 'Solar' ? 1.5 : fuel === 'Wind' ? 1.3 : 1)
+      }));
+      return acc;
+    }, {}), []);
+  
+  const fleetData = useMemo(() => 
+    isos.map(iso => ({
+      iso,
+      solar: 15 + Math.random() * 25,
+      wind: 20 + Math.random() * 30,
+      gas: 35 + Math.random() * 45,
+      coal: 10 + Math.random() * 20,
+      nuclear: 25 + Math.random() * 35,
+      hydro: 15 + Math.random() * 25,
+      biomass: 8 + Math.random() * 15
+    })), []);
+  
+  const investmentData = useMemo(() => 
+    isos.map(iso => ({
+      iso,
+      investment: 50 + Math.random() * 200
+    })), []);
+  
+  const typicalDayLMPData = useMemo(() => ({
+    min: Array.from({length: 25}, (_, h) => {
+      let factor = 1;
+      if (h >= 0 && h <= 6) factor = 0.6;
+      else if (h >= 7 && h <= 9) factor = 0.85;
+      else if (h >= 10 && h <= 16) factor = 1.2;
+      else if (h >= 17 && h <= 20) factor = 1.4;
+      else factor = 0.9;
+      return 25 * factor + (Math.random() - 0.5) * 10;
+    }),
+    max: Array.from({length: 25}, (_, h) => {
+      let factor = 1;
+      if (h >= 0 && h <= 6) factor = 0.6;
+      else if (h >= 7 && h <= 9) factor = 0.85;
+      else if (h >= 10 && h <= 16) factor = 1.2;
+      else if (h >= 17 && h <= 20) factor = 1.4;
+      else factor = 0.9;
+      return 85 * factor + (Math.random() - 0.5) * 10;
+    }),
+    'avg-future': Array.from({length: 25}, (_, h) => {
+      let factor = 1;
+      if (h >= 0 && h <= 6) factor = 0.6;
+      else if (h >= 7 && h <= 9) factor = 0.85;
+      else if (h >= 10 && h <= 16) factor = 1.2;
+      else if (h >= 17 && h <= 20) factor = 1.4;
+      else factor = 0.9;
+      return 55 * factor + (Math.random() - 0.5) * 10;
+    }),
+    'avg-historical': Array.from({length: 25}, (_, h) => {
+      let factor = 1;
+      if (h >= 0 && h <= 6) factor = 0.6;
+      else if (h >= 7 && h <= 9) factor = 0.85;
+      else if (h >= 10 && h <= 16) factor = 1.2;
+      else if (h >= 17 && h <= 20) factor = 1.4;
+      else factor = 0.9;
+      return 48 * factor + (Math.random() - 0.5) * 10;
+    })
+  }), []);
+  
+  const systemPriceData = useMemo(() => 
+    isos.slice(0, 4).map((iso, isoIdx) => {
+      const basePrice = 45 + isoIdx * 5;
+      return {
+        iso,
+        prices: [2020, 2025, 2030, 2035, 2040].map((year, i) => ({
+          year,
+          value: basePrice * (1 + i * 0.15) + (Math.random() - 0.5) * 8
+        }))
+      };
+    }), []);
+  
+  const typicalDayProfileData = useMemo(() => 
+    Array.from({length: 24}, (_, i) => 40 + Math.random() * 80), []);
+  
+  const powerFlowData = useMemo(() => 
+    ['Solar', 'Wind', 'Gas', 'Coal', 'Nuclear'].map((fuel, i) => ({
+      fuel,
+      base: 50 + Math.random() * 80,
+      demand: 120 + i * 15
+    })), []);
+  
+  const lmpForecastData = useMemo(() => 
+    [2025, 2026, 2027, 2028, 2029, 2030].map((year, i) => ({
+      year,
+      lmp: 35 + (45 + Math.random() * 35) * (1 + i * 0.08) * 0.5,
+      demand: 210 + i * 8
+    })), []);
   
   const handleThresholdChange = (e) => {
     if (e.key === 'Enter') {
@@ -122,7 +270,9 @@ const Analysis = () => {
                 </div>
                 <div className="stat-content">
                   <div className="stat-label">ISO & States</div>
-                  <div className="stat-value">7 ISO / 50 States</div>
+                  <div className="stat-value">
+                    {metricsLoading ? 'Loading...' : `${coverageMetrics.iso_count} ISO / ${coverageMetrics.state_count} States`}
+                  </div>
                 </div>
               </div>
               
@@ -146,27 +296,22 @@ const Analysis = () => {
                   </svg>
                 </div>
                 <div className="stat-content">
-                  <div className="stat-label">Total Headroom</div>
-                  <div className="stat-value stat-editable">
-                    <span>Bus &gt;</span>
+                  <div className="stat-label">Total Headroom (Bus &gt; {voltageThreshold} MW)</div>
+                  <div className="stat-value">
+                    {metricsLoading ? 'Calculating...' : `${coverageMetrics.total_headroom.toLocaleString()} MW`}
+                  </div>
+                  <div className="stat-value stat-editable" style={{fontSize: '12px', marginTop: '4px'}}>
+                    <span>Threshold:</span>
                     <input 
                       type="number" 
                       value={tempThreshold} 
                       onChange={(e) => setTempThreshold(Number(e.target.value))}
                       onKeyDown={handleThresholdChange}
                       className="threshold-input"
+                      style={{width: '60px', fontSize: '12px'}}
                     />
                     <span>MW</span>
                   </div>
-                  <select 
-                    value={headroomScenario} 
-                    onChange={(e) => setHeadroomScenario(e.target.value)}
-                    className="stat-scenario-select"
-                  >
-                    <option value="summer-peak">Summer Peak</option>
-                    <option value="summer-offpeak">Summer Off-Peak</option>
-                    <option value="spring-light">Spring Light Load</option>
-                  </select>
                 </div>
               </div>
               
@@ -301,16 +446,17 @@ const Analysis = () => {
                   <div className="graph-content">
                     <svg viewBox="0 0 400 250" className="bar-chart-svg">
                       <line x1="40" y1="200" x2="380" y2="200" stroke="#e2e8f0" strokeWidth="2"/>
-                      {isos.map((iso, i) => {
-                        const height = 50 + Math.random() * 130;
+                      {isoSummaryData.map((data, i) => {
+                        const value = data[isoSummaryMetric];
+                        const height = (value / 2500) * 150;
                         const x = 60 + i * 45;
                         return (
-                          <g key={iso}>
+                          <g key={data.iso}>
                             <rect x={x} y={200 - height} width="35" height={height} fill="#3b82f6" rx="3"/>
                             <text x={x + 17.5} y={195 - height} fontSize="11" fontWeight="600" fill="#1e293b" textAnchor="middle">
-                              {(1200 + Math.random() * 800).toFixed(0)}
+                              {value.toFixed(0)}
                             </text>
-                            <text x={x + 17.5} y="220" fontSize="10" fill="#64748b" textAnchor="middle">{iso}</text>
+                            <text x={x + 17.5} y="220" fontSize="10" fill="#64748b" textAnchor="middle">{data.iso}</text>
                           </g>
                         );
                       })}
@@ -337,16 +483,17 @@ const Analysis = () => {
                   <div className="graph-content">
                     <svg viewBox="0 0 400 250" className="bar-chart-svg">
                       <line x1="40" y1="200" x2="380" y2="200" stroke="#e2e8f0" strokeWidth="2"/>
-                      {isos.map((iso, i) => {
-                        const height = 40 + Math.random() * 140;
+                      {constraintData.map((data, i) => {
+                        const value = data[constraintView];
+                        const height = (value / 450) * 140;
                         const x = 60 + i * 45;
                         return (
-                          <g key={iso}>
+                          <g key={data.iso}>
                             <rect x={x} y={200 - height} width="35" height={height} fill="#ef4444" rx="3"/>
                             <text x={x + 17.5} y={195 - height} fontSize="11" fontWeight="600" fill="#1e293b" textAnchor="middle">
-                              {(150 + Math.random() * 300).toFixed(0)}
+                              {value.toFixed(0)}
                             </text>
-                            <text x={x + 17.5} y="220" fontSize="10" fill="#64748b" textAnchor="middle">{iso}</text>
+                            <text x={x + 17.5} y="220" fontSize="10" fill="#64748b" textAnchor="middle">{data.iso}</text>
                           </g>
                         );
                       })}
@@ -355,30 +502,35 @@ const Analysis = () => {
                   </div>
                 </div>
                 
-                {/* Graph 3: Interconnection Queue */}
+                {/* Graph 3: Interconnection Queue - Task 1 */}
                 <div className="graph-card">
                   <div className="graph-header">
                     <h3>Interconnection Queue</h3>
-                    <div className="graph-legend">
-                      <span className="legend-item"><span className="legend-dot" style={{background: '#10b981'}}></span>Active</span>
-                      <span className="legend-item"><span className="legend-dot" style={{background: '#f59e0b'}}></span>Withdrawn</span>
-                      <span className="legend-item"><span className="legend-dot" style={{background: '#6366f1'}}></span>Done</span>
+                    <div className="graph-controls">
+                      <select value={queueFuelType} onChange={(e) => setQueueFuelType(e.target.value)} className="graph-select">
+                        {queueFuelTypes.map(fuel => <option key={fuel} value={fuel.toLowerCase()}>{fuel}</option>)}
+                      </select>
                     </div>
+                  </div>
+                  <div className="graph-legend" style={{padding: '0 20px 10px', display: 'flex', gap: '16px', justifyContent: 'center'}}>
+                    <span className="legend-item"><span className="legend-dot" style={{background: '#10b981'}}></span>Active</span>
+                    <span className="legend-item"><span className="legend-dot" style={{background: '#f59e0b'}}></span>Withdrawn</span>
+                    <span className="legend-item"><span className="legend-dot" style={{background: '#6366f1'}}></span>Done</span>
                   </div>
                   <div className="graph-content">
                     <svg viewBox="0 0 400 250" className="bar-chart-svg">
                       <line x1="40" y1="200" x2="380" y2="200" stroke="#e2e8f0" strokeWidth="2"/>
-                      {isos.map((iso, i) => {
+                      {(queueData[queueFuelType] || queueData['solar']).map((data, i) => {
                         const x = 60 + i * 45;
-                        const h1 = 30 + Math.random() * 50;
-                        const h2 = 25 + Math.random() * 40;
-                        const h3 = 20 + Math.random() * 35;
+                        const h1 = (data.active / 120) * 80;
+                        const h2 = (data.withdrawn / 120) * 80;
+                        const h3 = (data.done / 120) * 80;
                         return (
-                          <g key={iso}>
+                          <g key={data.iso}>
                             <rect x={x} y={200 - h1 - h2 - h3} width="35" height={h1} fill="#10b981" rx="3"/>
                             <rect x={x} y={200 - h2 - h3} width="35" height={h2} fill="#f59e0b"/>
                             <rect x={x} y={200 - h3} width="35" height={h3} fill="#6366f1"/>
-                            <text x={x + 17.5} y="220" fontSize="10" fill="#64748b" textAnchor="middle">{iso}</text>
+                            <text x={x + 17.5} y="220" fontSize="10" fill="#64748b" textAnchor="middle">{data.iso}</text>
                           </g>
                         );
                       })}
@@ -387,33 +539,42 @@ const Analysis = () => {
                   </div>
                 </div>
                 
-                {/* Graph 4: Current Fleet */}
+                {/* Graph 4: Current Fleet - Task 2 */}
                 <div className="graph-card">
                   <div className="graph-header">
                     <h3>Current Fleet by Fuel Type</h3>
-                    <div className="graph-legend">
-                      <span className="legend-item"><span className="legend-dot" style={{background: '#fbbf24'}}></span>Solar</span>
-                      <span className="legend-item"><span className="legend-dot" style={{background: '#60a5fa'}}></span>Wind</span>
-                      <span className="legend-item"><span className="legend-dot" style={{background: '#94a3b8'}}></span>Gas</span>
-                      <span className="legend-item"><span className="legend-dot" style={{background: '#1f2937'}}></span>Coal</span>
-                    </div>
+                  </div>
+                  <div className="graph-legend" style={{padding: '0 20px 10px', display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap'}}>
+                    <span className="legend-item"><span className="legend-dot" style={{background: '#fbbf24'}}></span>Solar</span>
+                    <span className="legend-item"><span className="legend-dot" style={{background: '#60a5fa'}}></span>Wind</span>
+                    <span className="legend-item"><span className="legend-dot" style={{background: '#94a3b8'}}></span>Gas</span>
+                    <span className="legend-item"><span className="legend-dot" style={{background: '#1f2937'}}></span>Coal</span>
+                    <span className="legend-item"><span className="legend-dot" style={{background: '#8b5cf6'}}></span>Nuclear</span>
+                    <span className="legend-item"><span className="legend-dot" style={{background: '#10b981'}}></span>Hydro</span>
+                    <span className="legend-item"><span className="legend-dot" style={{background: '#f97316'}}></span>Biomass</span>
                   </div>
                   <div className="graph-content">
                     <svg viewBox="0 0 400 250" className="bar-chart-svg">
                       <line x1="40" y1="200" x2="380" y2="200" stroke="#e2e8f0" strokeWidth="2"/>
-                      {isos.map((iso, i) => {
+                      {fleetData.map((data, i) => {
                         const x = 60 + i * 45;
-                        const h1 = 20 + Math.random() * 30;
-                        const h2 = 25 + Math.random() * 35;
-                        const h3 = 35 + Math.random() * 50;
-                        const h4 = 15 + Math.random() * 25;
+                        const h1 = (data.solar / 40) * 25;
+                        const h2 = (data.wind / 50) * 30;
+                        const h3 = (data.gas / 80) * 45;
+                        const h4 = (data.coal / 30) * 20;
+                        const h5 = (data.nuclear / 60) * 35;
+                        const h6 = (data.hydro / 40) * 25;
+                        const h7 = (data.biomass / 23) * 15;
                         return (
-                          <g key={iso}>
-                            <rect x={x} y={200 - h1 - h2 - h3 - h4} width="35" height={h1} fill="#fbbf24" rx="3"/>
-                            <rect x={x} y={200 - h2 - h3 - h4} width="35" height={h2} fill="#60a5fa"/>
-                            <rect x={x} y={200 - h3 - h4} width="35" height={h3} fill="#94a3b8"/>
-                            <rect x={x} y={200 - h4} width="35" height={h4} fill="#1f2937"/>
-                            <text x={x + 17.5} y="220" fontSize="10" fill="#64748b" textAnchor="middle">{iso}</text>
+                          <g key={data.iso}>
+                            <rect x={x} y={200 - h1 - h2 - h3 - h4 - h5 - h6 - h7} width="35" height={h1} fill="#fbbf24" rx="3"/>
+                            <rect x={x} y={200 - h2 - h3 - h4 - h5 - h6 - h7} width="35" height={h2} fill="#60a5fa"/>
+                            <rect x={x} y={200 - h3 - h4 - h5 - h6 - h7} width="35" height={h3} fill="#94a3b8"/>
+                            <rect x={x} y={200 - h4 - h5 - h6 - h7} width="35" height={h4} fill="#1f2937"/>
+                            <rect x={x} y={200 - h5 - h6 - h7} width="35" height={h5} fill="#8b5cf6"/>
+                            <rect x={x} y={200 - h6 - h7} width="35" height={h6} fill="#10b981"/>
+                            <rect x={x} y={200 - h7} width="35" height={h7} fill="#f97316"/>
+                            <text x={x + 17.5} y="220" fontSize="10" fill="#64748b" textAnchor="middle">{data.iso}</text>
                           </g>
                         );
                       })}
@@ -440,16 +601,16 @@ const Analysis = () => {
                   <div className="graph-content">
                     <svg viewBox="0 0 400 250" className="bar-chart-svg">
                       <line x1="40" y1="200" x2="380" y2="200" stroke="#e2e8f0" strokeWidth="2"/>
-                      {isos.map((iso, i) => {
-                        const height = 50 + Math.random() * 120;
+                      {investmentData.map((data, i) => {
+                        const height = (data.investment / 250) * 120;
                         const x = 60 + i * 45;
                         return (
-                          <g key={iso}>
+                          <g key={data.iso}>
                             <rect x={x} y={200 - height} width="35" height={height} fill="#10b981" rx="3"/>
                             <text x={x + 17.5} y={195 - height} fontSize="11" fontWeight="600" fill="#1e293b" textAnchor="middle">
-                              ${(50 + Math.random() * 200).toFixed(0)}M
+                              ${data.investment.toFixed(0)}M
                             </text>
-                            <text x={x + 17.5} y="220" fontSize="10" fill="#64748b" textAnchor="middle">{iso}</text>
+                            <text x={x + 17.5} y="220" fontSize="10" fill="#64748b" textAnchor="middle">{data.iso}</text>
                           </g>
                         );
                       })}
@@ -458,15 +619,110 @@ const Analysis = () => {
                   </div>
                 </div>
                 
-                {/* Graph 6: Typical Day */}
+                {/* Task 3 - Graph 1: Typical Day LMP */}
+                <div className="graph-card">
+                  <div className="graph-header">
+                    <h3>Typical Day LMP</h3>
+                    <div className="graph-controls">
+                      <select value={typicalDayMetric} onChange={(e) => setTypicalDayMetric(e.target.value)} className="graph-select">
+                        <option value="min">Min</option>
+                        <option value="max">Max</option>
+                        <option value="avg-future">Avg Future 5 Years</option>
+                        <option value="avg-historical">Avg Historical Last 5 Years</option>
+                      </select>
+                      <select value={typicalDayLMPScenario} onChange={(e) => setTypicalDayLMPScenario(e.target.value)} className="graph-select">
+                        <option value="summer-peak">Summer Peak</option>
+                        <option value="summer-offpeak">Summer Off-Peak</option>
+                        <option value="spring-light">Spring Light</option>
+                        <option value="winter-peak">Winter Peak</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="graph-content">
+                    <svg viewBox="0 0 400 250" className="line-chart-svg">
+                      <line x1="40" y1="200" x2="380" y2="200" stroke="#e2e8f0" strokeWidth="2"/>
+                      <line x1="40" y1="200" x2="40" y2="30" stroke="#e2e8f0" strokeWidth="2"/>
+                      {/* Generate hourly LMP curve for selected ISO */}
+                      {(() => {
+                        const hours = Array.from({length: 25}, (_, i) => i);
+                        const values = typicalDayLMPData[typicalDayMetric];
+                        const points = hours.map(h => {
+                          const value = values[h];
+                          const x = 40 + (h * 340 / 24);
+                          const y = 200 - (value * 1.5);
+                          return {x, y, value};
+                        });
+                        const pathData = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+                        return (
+                          <>
+                            <path d={pathData} fill="none" stroke="#3b82f6" strokeWidth="2.5"/>
+                            {points.filter((_, i) => i % 4 === 0).map((p, i) => (
+                              <g key={i}>
+                                <circle cx={p.x} cy={p.y} r="3" fill="#3b82f6"/>
+                                <text x={p.x} y="220" fontSize="9" fill="#64748b" textAnchor="middle">{i*4}h</text>
+                              </g>
+                            ))}
+                          </>
+                        );
+                      })()}
+                      <text x="20" y="120" fontSize="12" fill="#64748b" textAnchor="middle" transform="rotate(-90 20 120)">LMP ($/MWh)</text>
+                      <text x="210" y="240" fontSize="12" fill="#64748b" textAnchor="middle">Hour of Day</text>
+                    </svg>
+                  </div>
+                </div>
+                
+                {/* Task 3 - Graph 2: System Wide Avg Price Curve */}
+                <div className="graph-card">
+                  <div className="graph-header">
+                    <h3>System Wide Avg Price Curve</h3>
+                    <div className="graph-legend">
+                      {isos.slice(0, 4).map((iso, idx) => {
+                        const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'];
+                        return <span key={iso} className="legend-item"><span className="legend-dot" style={{background: colors[idx]}}></span>{iso}</span>;
+                      })}
+                    </div>
+                  </div>
+                  <div className="graph-content">
+                    <svg viewBox="0 0 400 250" className="line-chart-svg">
+                      <line x1="40" y1="200" x2="380" y2="200" stroke="#e2e8f0" strokeWidth="2"/>
+                      <line x1="40" y1="200" x2="40" y2="30" stroke="#e2e8f0" strokeWidth="2"/>
+                      {/* Generate 5-year price curves for top ISOs */}
+                      {systemPriceData.map((isoData, isoIdx) => {
+                        const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'];
+                        const points = isoData.prices.map((price, i) => {
+                          const x = 40 + (i * 80);
+                          const y = 200 - (price.value * 1.8);
+                          return {x, y, value: price.value, year: price.year};
+                        });
+                        const pathData = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+                        return (
+                          <g key={isoData.iso}>
+                            <path d={pathData} fill="none" stroke={colors[isoIdx]} strokeWidth="2" opacity="0.8"/>
+                            {points.map((p, i) => (
+                              <circle key={i} cx={p.x} cy={p.y} r="3" fill={colors[isoIdx]}/>
+                            ))}
+                          </g>
+                        );
+                      })}
+                      {/* X-axis labels */}
+                      {[2020, 2025, 2030, 2035, 2040].map((year, i) => (
+                        <text key={year} x={40 + i * 80} y="220" fontSize="10" fill="#64748b" textAnchor="middle">{year}</text>
+                      ))}
+                      <text x="20" y="120" fontSize="12" fill="#64748b" textAnchor="middle" transform="rotate(-90 20 120)">Avg Price ($/MWh)</text>
+                      <text x="210" y="240" fontSize="12" fill="#64748b" textAnchor="middle">Year</text>
+                    </svg>
+                  </div>
+                </div>
+                
+                {/* Graph 6: Typical Day Profile */}
                 <div className="graph-card">
                   <div className="graph-header">
                     <h3>Typical Day Profile</h3>
                     <div className="graph-controls">
-                      <select value={typicalDayISO} onChange={(e) => setTypicalDayISO(e.target.value)} className="graph-select">
+                      <select value={typicalDayProfileISO} onChange={(e) => setTypicalDayProfileISO(e.target.value)} className="graph-select">
                         {isos.map(iso => <option key={iso} value={iso}>{iso}</option>)}
                       </select>
-                      <select value={typicalDayScenario} onChange={(e) => setTypicalDayScenario(e.target.value)} className="graph-select">
+                      <select value={typicalDayProfileScenario} onChange={(e) => setTypicalDayProfileScenario(e.target.value)} className="graph-select">
                         <option value="summer-peak">Summer Peak</option>
                         <option value="summer-offpeak">Summer Off-Peak</option>
                       </select>
@@ -475,31 +731,13 @@ const Analysis = () => {
                   <div className="graph-content">
                     <svg viewBox="0 0 400 250" className="line-chart-svg">
                       <line x1="40" y1="200" x2="380" y2="200" stroke="#e2e8f0" strokeWidth="2"/>
-                      <line x1="40" y1="50" x2="40" y2="200" stroke="#e2e8f0" strokeWidth="2"/>
-                      
-                      {/* Demand line */}
-                      <polyline
-                        fill="none"
-                        stroke="#1e293b"
-                        strokeWidth="2.5"
-                        points="40,180 60,170 80,150 100,120 120,100 140,90 160,85 180,80 200,85 220,95 240,110 260,130 280,140 300,145 320,155 340,170 360,180 380,185"
-                      />
-                      
-                      {/* Solar */}
-                      <polyline
-                        fill="none"
-                        stroke="#fbbf24"
-                        strokeWidth="2"
-                        points="40,200 60,195 80,185 100,160 120,130 140,110 160,100 180,95 200,100 220,110 240,135 260,165 280,185 300,195 320,200 340,200 360,200 380,200"
-                      />
-                      
-                      {/* Wind */}
-                      <polyline
-                        fill="none"
-                        stroke="#60a5fa"
-                        strokeWidth="2"
-                        points="40,200 60,190 80,185 100,175 120,165 140,160 160,155 180,150 200,155 220,165 240,170 260,175 280,180 300,185 320,190 340,195 360,198 380,200"
-                      />
+                      {typicalDayProfileData.map((value, i) => {
+                        const x = 50 + i * 14;
+                        const height = (value / 120) * 180;
+                        return (
+                          <rect key={i} x={x} y={200 - height} width="10" height={height} fill="#3b82f6" rx="2"/>
+                        );
+                      })}
                       
                       {/* Grid lines */}
                       {[0, 6, 12, 18, 24].map(hour => (
@@ -507,18 +745,6 @@ const Analysis = () => {
                       ))}
                       
                       <text x="20" y="125" fontSize="12" fill="#64748b" textAnchor="middle" transform="rotate(-90 20 125)">MW</text>
-                      
-                      {/* Legend */}
-                      <g transform="translate(100, 30)">
-                        <line x1="0" y1="5" x2="20" y2="5" stroke="#1e293b" strokeWidth="2.5"/>
-                        <text x="25" y="10" fontSize="11" fill="#64748b">Demand</text>
-                        
-                        <line x1="80" y1="5" x2="100" y2="5" stroke="#fbbf24" strokeWidth="2"/>
-                        <text x="105" y="10" fontSize="11" fill="#64748b">Solar</text>
-                        
-                        <line x1="160" y1="5" x2="180" y2="5" stroke="#60a5fa" strokeWidth="2"/>
-                        <text x="185" y="10" fontSize="11" fill="#64748b">Wind</text>
-                      </g>
                     </svg>
                   </div>
                 </div>
@@ -592,74 +818,143 @@ const Analysis = () => {
               <div className="assumption-graphs-section">
                 <h2>Forecasting & Analysis</h2>
                 <div className="assumption-graphs-grid">
-                  {/* Graph 1: Power Flow */}
+                  {/* Task 5: Power Flow Analysis - Dual Axis */}
                   <div className="assumption-graph-card">
                     <div className="graph-header">
-                      <h3>Power Flow Analysis</h3>
-                      <select 
-                        value={powerFlowFuelType} 
-                        onChange={(e) => setPowerFlowFuelType(e.target.value)}
-                        className="graph-select"
-                      >
-                        {fuelTypes.map(fuel => (
-                          <option key={fuel} value={fuel.toLowerCase()}>{fuel}</option>
-                        ))}
-                      </select>
+                      <h3>Power Flow Analysis (Max Demand)</h3>
+                      <div className="graph-controls">
+                        <select value={powerFlowScenario} onChange={(e) => setPowerFlowScenario(e.target.value)} className="graph-select">
+                          <option value="summer-peak">Summer Peak</option>
+                          <option value="summer-offpeak">Summer Off-Peak</option>
+                          <option value="spring-light">Spring Light</option>
+                          <option value="winter-peak">Winter Peak</option>
+                        </select>
+                        <select value={powerFlowYear} onChange={(e) => setPowerFlowYear(Number(e.target.value))} className="graph-select">
+                          <option value="2025">2025</option>
+                          <option value="2026">2026</option>
+                          <option value="2027">2027</option>
+                          <option value="2028">2028</option>
+                          <option value="2029">2029</option>
+                          <option value="2030">2030</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="graph-legend" style={{padding: '0 20px 10px', display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap'}}>
+                      <span className="legend-item"><span className="legend-dot" style={{background: '#fbbf24'}}></span>Solar</span>
+                      <span className="legend-item"><span className="legend-dot" style={{background: '#60a5fa'}}></span>Wind</span>
+                      <span className="legend-item"><span className="legend-dot" style={{background: '#94a3b8'}}></span>Gas</span>
+                      <span className="legend-item"><span className="legend-dot" style={{background: '#1f2937'}}></span>Coal</span>
+                      <span className="legend-item"><span className="legend-dot" style={{background: '#8b5cf6'}}></span>Nuclear</span>
+                      <span className="legend-item" style={{borderLeft: '2px solid #e5e7eb', paddingLeft: '12px', marginLeft: '4px'}}><span className="legend-dot" style={{background: '#ef4444', width: '4px', height: '12px', borderRadius: '1px'}}></span>Max Demand</span>
                     </div>
                     <div className="graph-content">
                       <svg viewBox="0 0 400 250" className="bar-chart-svg">
+                        {/* Dual Y-axes */}
                         <line x1="40" y1="200" x2="380" y2="200" stroke="#e2e8f0" strokeWidth="2"/>
-                        {fuelTypes.slice(1).map((fuel, i) => {
-                          const height = 50 + Math.random() * 130;
-                          const x = 60 + i * 50;
-                          const colors = ['#fbbf24', '#60a5fa', '#94a3b8', '#1f2937', '#8b5cf6', '#10b981'];
+                        <line x1="40" y1="30" x2="40" y2="200" stroke="#e2e8f0" strokeWidth="2"/>
+                        <line x1="380" y1="30" x2="380" y2="200" stroke="#e2e8f0" strokeWidth="2" strokeDasharray="4 2"/>
+                        
+                        {/* Bars for each fuel type */}
+                        {powerFlowData.map((data, i) => {
+                          const yearMultiplier = (powerFlowYear - 2024) * 0.05 + 1;
+                          const scenarioMultiplier = powerFlowScenario === 'summer-peak' ? 1.2 : powerFlowScenario === 'winter-peak' ? 1.15 : 0.85;
+                          const height = (data.base * yearMultiplier * scenarioMultiplier) * 0.8;
+                          const x = 70 + i * 60;
+                          const colors = ['#fbbf24', '#60a5fa', '#94a3b8', '#1f2937', '#8b5cf6'];
                           return (
-                            <g key={fuel}>
-                              <rect x={x} y={200 - height} width="40" height={height} fill={colors[i]} rx="3"/>
-                              <text x={x + 20} y={195 - height} fontSize="11" fontWeight="600" fill="#1e293b" textAnchor="middle">
-                                {(800 + Math.random() * 600).toFixed(0)}
+                            <g key={data.fuel}>
+                              <rect x={x} y={200 - height} width="45" height={height} fill={colors[i]} rx="3" opacity="0.85"/>
+                              <text x={x + 22.5} y={195 - height} fontSize="11" fontWeight="600" fill="#1e293b" textAnchor="middle">
+                                {(height * 8).toFixed(0)}
                               </text>
-                              <text x={x + 20} y="220" fontSize="10" fill="#64748b" textAnchor="middle">{fuel}</text>
+                              <text x={x + 22.5} y="220" fontSize="10" fill="#64748b" textAnchor="middle">{data.fuel}</text>
                             </g>
                           );
                         })}
-                        <text x="20" y="125" fontSize="12" fill="#64748b" textAnchor="middle" transform="rotate(-90 20 125)">MW</text>
+                        
+                        {/* Line for Max Demand (right Y-axis) */}
+                        {(() => {
+                          const demandPoints = powerFlowData.map((data, i) => {
+                            const x = 70 + i * 60 + 22.5;
+                            const y = 200 - (data.demand * 0.9);
+                            return {x, y, value: data.demand};
+                          });
+                          const pathData = demandPoints.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+                          return (
+                            <>
+                              <path d={pathData} fill="none" stroke="#ef4444" strokeWidth="3" strokeLinecap="round"/>
+                              {demandPoints.map((p, i) => (
+                                <g key={i}>
+                                  <circle cx={p.x} cy={p.y} r="4" fill="#ef4444"/>
+                                  <text x={p.x} y={p.y - 10} fontSize="10" fontWeight="600" fill="#ef4444" textAnchor="middle">{p.value.toFixed(0)}</text>
+                                </g>
+                              ))}
+                            </>
+                          );
+                        })()}
+                        
+                        <text x="20" y="125" fontSize="11" fill="#64748b" textAnchor="middle" transform="rotate(-90 20 125)">Generation (MW)</text>
+                        <text x="390" y="125" fontSize="11" fill="#ef4444" textAnchor="middle" transform="rotate(90 390 125)">Max Demand (%)</text>
                       </svg>
                     </div>
                   </div>
                   
-                  {/* Graph 2: LMP Forecasting */}
+                  {/* Task 4: LMP Forecasting - Dual Axis (Bars + Line) */}
                   <div className="assumption-graph-card">
                     <div className="graph-header">
                       <h3>LMP Forecasting</h3>
-                      <select 
-                        value={lmpFuelType} 
-                        onChange={(e) => setLmpFuelType(e.target.value)}
-                        className="graph-select"
-                      >
-                        {fuelTypes.map(fuel => (
-                          <option key={fuel} value={fuel.toLowerCase()}>{fuel}</option>
-                        ))}
-                      </select>
+                      <div className="graph-legend">
+                        <span className="legend-item"><span className="legend-dot" style={{background: '#3b82f6', width: '12px', height: '12px'}}></span>Fuel Mix ($/MWh)</span>
+                        <span className="legend-item"><span className="legend-dot" style={{background: '#f59e0b', width: '4px', height: '12px', borderRadius: '1px'}}></span>Demand (GW)</span>
+                      </div>
                     </div>
                     <div className="graph-content">
                       <svg viewBox="0 0 400 250" className="bar-chart-svg">
+                        {/* Dual Y-axes */}
                         <line x1="40" y1="200" x2="380" y2="200" stroke="#e2e8f0" strokeWidth="2"/>
-                        {fuelTypes.slice(1).map((fuel, i) => {
-                          const height = 40 + Math.random() * 140;
+                        <line x1="40" y1="30" x2="40" y2="200" stroke="#e2e8f0" strokeWidth="2"/>
+                        <line x1="380" y1="30" x2="380" y2="200" stroke="#e2e8f0" strokeWidth="2" strokeDasharray="4 2"/>
+                        
+                        {/* Bars showing LMP by year (similar to attached image) */}
+                        {lmpForecastData.map((data, i) => {
+                          const height = (data.lmp * 1.5);
                           const x = 60 + i * 50;
-                          const colors = ['#fbbf24', '#60a5fa', '#94a3b8', '#1f2937', '#8b5cf6', '#10b981'];
                           return (
-                            <g key={fuel}>
-                              <rect x={x} y={200 - height} width="40" height={height} fill={colors[i]} rx="3"/>
-                              <text x={x + 20} y={195 - height} fontSize="11" fontWeight="600" fill="#1e293b" textAnchor="middle">
-                                ${(25 + Math.random() * 50).toFixed(1)}
+                            <g key={data.year}>
+                              <rect x={x} y={200 - height} width="42" height={height} fill="#3b82f6" rx="3" opacity="0.8"/>
+                              <text x={x + 21} y={195 - height} fontSize="11" fontWeight="600" fill="#1e293b" textAnchor="middle">
+                                ${data.lmp.toFixed(0)}
                               </text>
-                              <text x={x + 20} y="220" fontSize="10" fill="#64748b" textAnchor="middle">{fuel}</text>
+                              <text x={x + 21} y="220" fontSize="10" fill="#64748b" textAnchor="middle">{data.year}</text>
                             </g>
                           );
                         })}
-                        <text x="20" y="125" fontSize="12" fill="#64748b" textAnchor="middle" transform="rotate(-90 20 125)">$/MWh</text>
+                        
+                        {/* Line showing demand trend (right Y-axis) */}
+                        {(() => {
+                          const demandPoints = lmpForecastData.map((data, i) => {
+                            const x = 60 + i * 50 + 21;
+                            const y = 200 - (data.demand * 0.75);
+                            return {x, y, value: data.demand};
+                          });
+                          const pathData = demandPoints.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+                          return (
+                            <>
+                              <path d={pathData} fill="none" stroke="#f59e0b" strokeWidth="3" strokeLinecap="round"/>
+                              {demandPoints.map((p, i) => (
+                                <g key={i}>
+                                  <circle cx={p.x} cy={p.y} r="4" fill="#f59e0b"/>
+                                  <text x={p.x} y={p.y - 10} fontSize="10" fontWeight="600" fill="#f59e0b" textAnchor="middle">{p.value}</text>
+                                </g>
+                              ))}
+                            </>
+                          );
+                        })()}
+                        
+                        {/* Y-axis labels */}
+                        <text x="20" y="125" fontSize="11" fill="#64748b" textAnchor="middle" transform="rotate(-90 20 125)">LMP ($/MWh)</text>
+                        <text x="390" y="125" fontSize="11" fill="#f59e0b" textAnchor="middle" transform="rotate(90 390 125)">Demand (GW)</text>
+                        <text x="210" y="240" fontSize="12" fill="#64748b" textAnchor="middle">Year</text>
                       </svg>
                     </div>
                   </div>

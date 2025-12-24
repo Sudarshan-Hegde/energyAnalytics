@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './Maps.css';
@@ -97,12 +97,27 @@ const Maps = ({ selectedISO }) => {
     statuses: [],
     regions: []
   });
-  const [activeFilters, setActiveFilters] = useState({
-    voltages: [],
-    capacities: [],
-    statuses: [],
-    regions: []
+  const [tempFilters, setTempFilters] = useState({
+    state: '',
+    county: '',
+    voltage: '',
+    scenario: '',
+    headroom: ''
   });
+  const [activeFilters, setActiveFilters] = useState({
+    state: '',
+    county: '',
+    voltage: '',
+    scenario: '',
+    headroom: ''
+  });
+  const [filterOptions, setFilterOptions] = useState({
+    counties: [],
+    voltages: [],
+    scenarios: []
+  });
+  const [dashboardData, setDashboardData] = useState([]);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
   
   const [visibleLayers, setVisibleLayers] = useState({
     grids: true,
@@ -186,6 +201,82 @@ const Maps = ({ selectedISO }) => {
     };
     fetchSubstationTypes();
   }, []);
+  
+  // Fetch filter options from backend
+  useEffect(() => {
+    const fetchFilterOptions = async () => {
+      try {
+        const res = await fetch('http://localhost:8000/grid-data/filter-options');
+        const data = await res.json();
+        if (data.success) {
+          setFilterOptions(data.data);
+          console.log('✅ Loaded filter options:', data.data);
+        }
+      } catch (error) {
+        console.error('Error fetching filter options:', error);
+      }
+    };
+    fetchFilterOptions();
+  }, []);
+  
+  // Compute filtered counties based on selected state
+  const availableCounties = useMemo(() => {
+    if (!tempFilters.state) {
+      // No state selected, show all counties
+      return filterOptions.counties;
+    }
+    
+    // Filter buses by selected state and get unique counties
+    const countiesInState = [...new Set(
+      buses
+        .filter(bus => bus.state === tempFilters.state && bus.county)
+        .map(bus => bus.county)
+    )].sort();
+    
+    return countiesInState;
+  }, [tempFilters.state, filterOptions.counties, buses]);
+  
+  // Fetch dashboard data for selected buses
+  useEffect(() => {
+    console.log('📊 Dashboard useEffect triggered. Selected buses:', selectedSubstations.length);
+    
+    if (selectedSubstations.length === 0) {
+      setDashboardData([]);
+      console.log('⚠️ No buses selected, clearing dashboard data');
+      return;
+    }
+    
+    const fetchDashboardData = async () => {
+      setDashboardLoading(true);
+      try {
+        const params = new URLSearchParams();
+        selectedSubstations.forEach(sub => {
+          params.append('buses[]', sub.name);
+        });
+        
+        const url = `http://localhost:8000/grid-data/bus-dashboard?${params}`;
+        console.log('🔄 Fetching dashboard data from:', url);
+        
+        const res = await fetch(url);
+        const data = await res.json();
+        
+        console.log('📥 Dashboard response:', data);
+        
+        if (data.success) {
+          setDashboardData(data.data);
+          console.log('✅ Dashboard data loaded:', data.data.length, 'buses');
+        } else {
+          console.error('❌ Dashboard fetch failed:', data);
+        }
+      } catch (error) {
+        console.error('❌ Error fetching dashboard data:', error);
+      } finally {
+        setDashboardLoading(false);
+      }
+    };
+    
+    fetchDashboardData();
+  }, [selectedSubstations]);
   
   // Fetch Future Outlook data when map loads
   useEffect(() => {
@@ -994,6 +1085,65 @@ const Maps = ({ selectedISO }) => {
 
     console.log('✅ Real grid infrastructure layers loaded successfully');
   }, [mapLoaded, dataLoading, busesGeoJSON, branchesGeoJSON, generatorsGeoJSON, visibleLayers.powerPlants]);
+
+  // Apply filters to buses layer by updating source data (affects clusters too)
+  useEffect(() => {
+    if (!map.current || !mapLoaded || !map.current.getSource('real-buses-source')) return;
+
+    // Check if any filter is active
+    const hasActiveFilters = activeFilters.state || activeFilters.county || activeFilters.voltage || activeFilters.headroom;
+    
+    let filteredGeoJSON;
+    
+    if (hasActiveFilters) {
+      // Filter the features based on active filters
+      const filteredFeatures = busesGeoJSON.features.filter(feature => {
+        const props = feature.properties;
+        
+        // State filter
+        if (activeFilters.state && props.state !== activeFilters.state) {
+          return false;
+        }
+        
+        // County filter
+        if (activeFilters.county && props.county !== activeFilters.county) {
+          return false;
+        }
+        
+        // Voltage filter
+        if (activeFilters.voltage && props.voltage !== parseFloat(activeFilters.voltage)) {
+          return false;
+        }
+        
+        // Headroom filter (minimum MW)
+        if (activeFilters.headroom) {
+          const minHeadroom = parseFloat(activeFilters.headroom);
+          const dischargingOk = props.headroom_discharging >= minHeadroom;
+          const chargingOk = props.headroom_charging >= minHeadroom;
+          if (!dischargingOk && !chargingOk) {
+            return false;
+          }
+        }
+        
+        return true;
+      });
+      
+      filteredGeoJSON = {
+        type: 'FeatureCollection',
+        features: filteredFeatures
+      };
+      
+      console.log(`🔍 Filtered buses: ${filteredFeatures.length} / ${busesGeoJSON.features.length}`);
+    } else {
+      // No filters active, use all data
+      filteredGeoJSON = busesGeoJSON;
+    }
+    
+    // Update the source data (this will automatically update clusters)
+    map.current.getSource('real-buses-source').setData(filteredGeoJSON);
+    
+    // No need to set layer filters anymore - data filtering handles everything
+  }, [mapLoaded, activeFilters, busesGeoJSON]);
 
   const changeMapStyle = (styleType) => {
     if (!map.current) return;
@@ -2445,13 +2595,14 @@ const Maps = ({ selectedISO }) => {
                 <select 
                   className="filter-select"
                   onChange={(e) => {
-                    const value = e.target.value;
-                    setActiveFilters(prev => ({
-                      ...prev,
-                      regions: value ? [value] : []
+                    const newState = e.target.value;
+                    setTempFilters(prev => ({ 
+                      ...prev, 
+                      state: newState,
+                      county: '' // Reset county when state changes
                     }));
                   }}
-                  value={activeFilters.regions[0] || ''}
+                  value={tempFilters.state}
                 >
                   <option value="">All States</option>
                   {filters.regions.map(region => (
@@ -2463,89 +2614,125 @@ const Maps = ({ selectedISO }) => {
               </div>
             )}
 
+            {/* County Filter */}
+            {availableCounties.length > 0 && (
+              <div className="filter-group-horizontal">
+                <label className="filter-label">County:</label>
+                <select 
+                  className="filter-select"
+                  onChange={(e) => setTempFilters(prev => ({ ...prev, county: e.target.value }))}
+                  value={tempFilters.county}
+                >
+                  <option value="">All Counties{tempFilters.state ? ' (in selected state)' : ''}</option>
+                  {availableCounties.map(county => (
+                    <option key={county} value={county}>
+                      {county}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {/* Voltage Filter */}
-            {filters.voltageRanges.length > 0 && (
+            {filterOptions.voltages.length > 0 && (
               <div className="filter-group-horizontal">
                 <label className="filter-label">Voltage:</label>
                 <select 
                   className="filter-select"
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setActiveFilters(prev => ({
-                      ...prev,
-                      voltages: value ? [parseFloat(value)] : []
-                    }));
-                  }}
-                  value={activeFilters.voltages[0] || ''}
+                  onChange={(e) => setTempFilters(prev => ({ ...prev, voltage: e.target.value }))}
+                  value={tempFilters.voltage}
                 >
                   <option value="">All Voltages</option>
-                  {filters.voltageRanges.map(voltage => (
-                    <option key={voltage.value} value={voltage.value}>
-                      {voltage.label} ({voltage.count})
+                  {filterOptions.voltages.map(voltage => (
+                    <option key={voltage} value={voltage}>
+                      {voltage} kV
                     </option>
                   ))}
                 </select>
               </div>
             )}
 
-            {/* Status Filter */}
-            {filters.statuses.length > 0 && (
+            {/* Scenario Filter */}
+            {filterOptions.scenarios.length > 0 && (
               <div className="filter-group-horizontal">
-                <label className="filter-label">Status:</label>
+                <label className="filter-label">Scenario:</label>
                 <select 
                   className="filter-select"
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setActiveFilters(prev => ({
-                      ...prev,
-                      statuses: value ? [value] : []
-                    }));
-                  }}
-                  value={activeFilters.statuses[0] || ''}
+                  onChange={(e) => setTempFilters(prev => ({ ...prev, scenario: e.target.value }))}
+                  value={tempFilters.scenario}
                 >
-                  <option value="">All Status</option>
-                  {filters.statuses.map(status => (
-                    <option key={status.value} value={status.value}>
-                      {status.label} ({status.count})
+                  <option value="">All Scenarios</option>
+                  {filterOptions.scenarios.map(scenario => (
+                    <option key={scenario} value={scenario}>
+                      {scenario}
                     </option>
                   ))}
                 </select>
               </div>
             )}
 
-            {/* Capacity Filter */}
-            {filters.capacityRanges.length > 0 && (
-              <div className="filter-group-horizontal">
-                <label className="filter-label">Capacity:</label>
-                <select 
-                  className="filter-select"
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setActiveFilters(prev => ({
-                      ...prev,
-                      capacities: value ? [parseInt(value)] : []
-                    }));
-                  }}
-                  value={activeFilters.capacities[0] || ''}
-                >
-                  <option value="">All Capacities</option>
-                  {filters.capacityRanges.map((range, idx) => (
-                    <option key={idx} value={idx}>
-                      {range.label} ({range.count})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+            {/* Headroom Filter */}
+            <div className="filter-group-horizontal">
+              <label className="filter-label">Min Headroom (MW):</label>
+              <input 
+                type="number" 
+                className="filter-select"
+                placeholder="Enter MW"
+                onChange={(e) => setTempFilters(prev => ({ ...prev, headroom: e.target.value }))}
+                value={tempFilters.headroom}
+                style={{ width: '120px' }}
+              />
+            </div>
+
+            {/* Apply Filter Button */}
+            <button 
+              className="apply-filter-btn"
+              onClick={() => {
+                setActiveFilters({ ...tempFilters });
+                console.log('Applying filters:', tempFilters);
+              }}
+              style={{
+                padding: '8px 20px',
+                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                fontSize: '13px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.2s ease',
+                boxShadow: '0 2px 4px rgba(16, 185, 129, 0.2)',
+                marginLeft: '12px'
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.transform = 'translateY(-1px)';
+                e.target.style.boxShadow = '0 4px 8px rgba(16, 185, 129, 0.3)';
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.transform = 'translateY(0)';
+                e.target.style.boxShadow = '0 2px 4px rgba(16, 185, 129, 0.2)';
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+              Apply Filter
+            </button>
 
             {/* Clear Filters Button */}
-            {(activeFilters.regions.length > 0 || activeFilters.voltages.length > 0 || 
-              activeFilters.statuses.length > 0 || activeFilters.capacities.length > 0) && (
+            {(activeFilters.state || activeFilters.county || activeFilters.voltage || activeFilters.scenario || activeFilters.headroom) && (
               <button 
                 className="clear-filters-btn"
-                onClick={() => setActiveFilters({ voltages: [], capacities: [], statuses: [], regions: [] })}
+                onClick={() => {
+                  const emptyFilters = { state: '', county: '', voltage: '', scenario: '', headroom: '' };
+                  setTempFilters(emptyFilters);
+                  setActiveFilters(emptyFilters);
+                  console.log('🔄 All filters cleared - buses should reappear');
+                }}
                 style={{
-                  marginTop: '12px',
                   padding: '8px 16px',
                   background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
                   color: 'white',
@@ -2558,7 +2745,8 @@ const Maps = ({ selectedISO }) => {
                   alignItems: 'center',
                   gap: '6px',
                   transition: 'all 0.2s ease',
-                  boxShadow: '0 2px 4px rgba(239, 68, 68, 0.2)'
+                  boxShadow: '0 2px 4px rgba(239, 68, 68, 0.2)',
+                  marginLeft: '8px'
                 }}
                 onMouseEnter={(e) => {
                   e.target.style.transform = 'translateY(-1px)';
@@ -3422,221 +3610,486 @@ const Maps = ({ selectedISO }) => {
             {/* Bus Dashboard Tab Content */}
             {activeRightTab === 'dashboard' && (
               <div className="data-panel-content">
-                <div className="dashboard-header">
-                  <h3>Bus Performance Dashboard</h3>
-                  <button 
-                    className="expand-btn"
-                    onClick={() => setShowDashboardModal(true)}
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
+                <div className="dashboard-header" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h3>Bus Performance Dashboard</h3>
+                    <button 
+                      className="expand-btn"
+                      onClick={() => setShowDashboardModal(true)}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
+                      </svg>
+                      Expand
+                    </button>
+                  </div>
+                  
+                  {/* Search Bar for Bus Selection */}
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type="text"
+                      placeholder="Search and select buses..."
+                      value={busSearch}
+                      onChange={(e) => setBusSearch(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        paddingLeft: '36px',
+                        border: '2px solid #e5e7eb',
+                        borderRadius: '8px',
+                        fontSize: '13px',
+                        outline: 'none',
+                        transition: 'all 0.2s'
+                      }}
+                      onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+                      onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
+                    />
+                    <svg 
+                      width="16" 
+                      height="16" 
+                      viewBox="0 0 24 24" 
+                      fill="none" 
+                      stroke="#9ca3af" 
+                      strokeWidth="2"
+                      style={{
+                        position: 'absolute',
+                        left: '12px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        pointerEvents: 'none'
+                      }}
+                    >
+                      <circle cx="11" cy="11" r="8"/>
+                      <path d="m21 21-4.35-4.35"/>
                     </svg>
-                    Expand
-                  </button>
+                    
+                    {/* Search Results Dropdown */}
+                    {busSearch && (
+                      <div style={{
+                        position: 'absolute',
+                        top: '100%',
+                        left: 0,
+                        right: 0,
+                        marginTop: '4px',
+                        background: 'white',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+                        maxHeight: '200px',
+                        overflowY: 'auto',
+                        zIndex: 100
+                      }}>
+                        {buses
+                          .filter(bus => 
+                            bus.bus_name?.toLowerCase().includes(busSearch.toLowerCase())
+                          )
+                          .slice(0, 20)
+                          .map(bus => (
+                            <div
+                              key={bus.bus_id}
+                              onClick={() => {
+                                console.log('🖱️ Clicked bus:', bus.bus_name);
+                                const isSelected = selectedSubstations.some(s => s.id === bus.bus_id);
+                                if (isSelected) {
+                                  console.log('❌ Removing bus from selection');
+                                  setSelectedSubstations(prev => prev.filter(s => s.id !== bus.bus_id));
+                                } else {
+                                  console.log('✅ Adding bus to selection');
+                                  setSelectedSubstations(prev => {
+                                    const newSelection = [...prev, {
+                                      id: bus.bus_id,
+                                      name: bus.bus_name,
+                                      latitude: bus.latitude,
+                                      longitude: bus.longitude
+                                    }];
+                                    console.log('📋 New selectedSubstations:', newSelection);
+                                    return newSelection;
+                                  });
+                                }
+                              }}
+                              style={{
+                                padding: '10px 12px',
+                                cursor: 'pointer',
+                                borderBottom: '1px solid #f3f4f6',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                fontSize: '13px',
+                                background: selectedSubstations.some(s => s.id === bus.bus_id) ? '#eff6ff' : 'white'
+                              }}
+                              onMouseEnter={(e) => e.target.style.background = '#f9fafb'}
+                              onMouseLeave={(e) => {
+                                e.target.style.background = selectedSubstations.some(s => s.id === bus.bus_id) ? '#eff6ff' : 'white';
+                              }}
+                            >
+                              <span>{bus.bus_name}</span>
+                              {selectedSubstations.some(s => s.id === bus.bus_id) && (
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2">
+                                  <polyline points="20 6 9 17 4 12"/>
+                                </svg>
+                              )}
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Selected Buses Count and Clear Button */}
+                  {selectedSubstations.length > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: '#f0f9ff', borderRadius: '6px' }}>
+                      <span style={{ fontSize: '13px', color: '#1e40af', fontWeight: '500' }}>
+                        {selectedSubstations.length} bus{selectedSubstations.length !== 1 ? 'es' : ''} selected
+                      </span>
+                      <button
+                        onClick={() => setSelectedSubstations([])}
+                        style={{
+                          padding: '4px 8px',
+                          background: '#3b82f6',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          fontSize: '12px',
+                          cursor: 'pointer',
+                          fontWeight: '500'
+                        }}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  )}
                 </div>
                 
                 <div className="dashboard-content">
-                  {/* LMP Statistics Card */}
-                  <div className="dashboard-card">
-                    <h4>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" style={{display: 'inline', marginRight: '8px'}}>
-                        <line x1="12" y1="1" x2="12" y2="23"/>
-                        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-                      </svg>
-                      LMP Statistics ($/MWh)
-                    </h4>
-                    <div className="stat-grid">
-                      <div className="stat-item">
-                        <span className="stat-label">Avg LMP 2024</span>
-                        <span className="stat-value">$45.23</span>
-                      </div>
-                      <div className="stat-item">
-                        <span className="stat-label">Peak LMP</span>
-                        <span className="stat-value stat-danger">$127.50</span>
-                      </div>
-                      <div className="stat-item">
-                        <span className="stat-label">Min LMP</span>
-                        <span className="stat-value stat-success">$18.75</span>
+                  {dashboardLoading ? (
+                    <div style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>
+                      <div style={{ fontSize: '14px', fontWeight: '500' }}>Loading dashboard data...</div>
+                      <div style={{ fontSize: '12px', marginTop: '8px' }}>Fetching data for {selectedSubstations.length} bus(es)...</div>
+                    </div>
+                  ) : !dashboardData || dashboardData.length === 0 ? (
+                    <div style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>
+                      <p style={{ fontSize: '14px', marginBottom: '8px' }}>Select buses from the search bar to view dashboard</p>
+                      <p style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '12px' }}>
+                        {selectedSubstations.length > 0 
+                          ? `${selectedSubstations.length} bus(es) selected but no data available` 
+                          : 'Search for buses using the search bar above'}
+                      </p>
+                      {/* Debug Info */}
+                      <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '16px', padding: '12px', background: '#f9fafb', borderRadius: '6px', textAlign: 'left' }}>
+                        <div><strong>Debug Info:</strong></div>
+                        <div>Selected: {selectedSubstations.length} buses</div>
+                        <div>Dashboard Data: {dashboardData ? dashboardData.length : 'null'} items</div>
+                        <div>Loading: {dashboardLoading ? 'Yes' : 'No'}</div>
+                        {selectedSubstations.length > 0 && (
+                          <>
+                            <div style={{ marginTop: '8px' }}>
+                              <div>Selected Buses:</div>
+                              {selectedSubstations.map((sub, idx) => (
+                                <div key={idx} style={{ marginLeft: '8px' }}>- {sub.name}</div>
+                              ))}
+                            </div>
+                            <button
+                              onClick={async () => {
+                                console.log('🧪 Manual test fetch initiated');
+                                const params = new URLSearchParams();
+                                selectedSubstations.forEach(sub => params.append('buses[]', sub.name));
+                                const url = `http://localhost:8000/grid-data/bus-dashboard?${params}`;
+                                console.log('URL:', url);
+                                try {
+                                  const res = await fetch(url);
+                                  const data = await res.json();
+                                  console.log('Test response:', data);
+                                  alert(`Fetched ${data.data?.length || 0} buses. Check console for details.`);
+                                } catch (err) {
+                                  console.error('Test error:', err);
+                                  alert('Error: ' + err.message);
+                                }
+                              }}
+                              style={{
+                                marginTop: '8px',
+                                padding: '6px 12px',
+                                background: '#3b82f6',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '11px'
+                              }}
+                            >
+                              Test Fetch Manually
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
-                    <div className="mini-chart">
-                      <div className="chart-title">LMP Trend (2024)</div>
-                      <svg viewBox="0 0 300 80" className="line-chart">
-                        <polyline
-                          fill="none"
-                          stroke="#3b82f6"
-                          strokeWidth="2"
-                          points="10,60 40,45 70,50 100,30 130,35 160,25 190,40 220,28 250,35 280,30"
-                        />
-                        <polyline
-                          fill="none"
-                          stroke="rgba(59, 130, 246, 0.2)"
-                          strokeWidth="1"
-                          strokeDasharray="4,4"
-                          points="10,45 280,45"
-                        />
-                      </svg>
-                      <div className="chart-labels">
-                        <span>Jan</span>
-                        <span>Apr</span>
-                        <span>Jul</span>
-                        <span>Oct</span>
-                        <span>Dec</span>
+                  ) : (
+                    <>
+                      <div style={{ padding: '12px', background: '#f0fdf4', borderRadius: '6px', marginBottom: '16px', fontSize: '13px', color: '#059669' }}>
+                        Showing data for {dashboardData.length} bus(es)
                       </div>
-                    </div>
-                  </div>
-                  
-                  {/* Voltage Distribution Card */}
-                  <div className="dashboard-card">
-                    <h4>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" style={{display: 'inline', marginRight: '8px'}}>
-                        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
-                      </svg>
-                      Voltage Levels Distribution
-                    </h4>
-                    <div className="bar-chart-container">
-                      <div className="bar-chart">
-                        <div className="bar-item">
-                          <div className="bar-fill" style={{height: '85%', background: '#10b981'}}></div>
-                          <span className="bar-label">115kV</span>
-                          <span className="bar-value">245</span>
-                        </div>
-                        <div className="bar-item">
-                          <div className="bar-fill" style={{height: '65%', background: '#3b82f6'}}></div>
-                          <span className="bar-label">138kV</span>
-                          <span className="bar-value">187</span>
-                        </div>
-                        <div className="bar-item">
-                          <div className="bar-fill" style={{height: '45%', background: '#6366f1'}}></div>
-                          <span className="bar-label">230kV</span>
-                          <span className="bar-value">128</span>
-                        </div>
-                        <div className="bar-item">
-                          <div className="bar-fill" style={{height: '30%', background: '#8b5cf6'}}></div>
-                          <span className="bar-label">345kV</span>
-                          <span className="bar-value">85</span>
-                        </div>
-                        <div className="bar-item">
-                          <div className="bar-fill" style={{height: '15%', background: '#a855f7'}}></div>
-                          <span className="bar-label">500kV</span>
-                          <span className="bar-value">42</span>
+                      {/* Graph 1: Headroom by Scenario */}
+                      <div className="dashboard-card">
+                        <h4>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2" style={{display: 'inline', marginRight: '8px'}}>
+                            <path d="M18 20V10M12 20V4M6 20v-6"/>
+                          </svg>
+                          Headroom by Scenario
+                        </h4>
+                        <div className="bar-chart-container" style={{ height: '300px', padding: '20px' }}>
+                          {dashboardData.map((bus, idx) => (
+                            <div key={idx} style={{ marginBottom: '16px' }}>
+                              <div style={{ fontSize: '12px', fontWeight: '600', marginBottom: '8px', color: '#111827' }}>
+                                {bus.bus_name}
+                              </div>
+                              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '6px' }}>
+                                <span style={{ fontSize: '11px', width: '80px', color: '#6b7280' }}>Discharging:</span>
+                                <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '24px', overflow: 'hidden' }}>
+                                  <div style={{ 
+                                    width: `${Math.min((parseFloat(bus.headroom_discharging) || 0) / 1000 * 100, 100)}%`, 
+                                    background: 'linear-gradient(90deg, #10b981, #059669)', 
+                                    height: '100%',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    paddingLeft: '8px',
+                                    color: 'white',
+                                    fontSize: '11px',
+                                    fontWeight: '600'
+                                  }}>
+                                    {parseFloat(bus.headroom_discharging || 0).toFixed(1)} MW
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                <span style={{ fontSize: '11px', width: '80px', color: '#6b7280' }}>Charging:</span>
+                                <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '24px', overflow: 'hidden' }}>
+                                  <div style={{ 
+                                    width: `${Math.min((parseFloat(bus.headroom_charging) || 0) / 1000 * 100, 100)}%`, 
+                                    background: 'linear-gradient(90deg, #3b82f6, #2563eb)', 
+                                    height: '100%',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    paddingLeft: '8px',
+                                    color: 'white',
+                                    fontSize: '11px',
+                                    fontWeight: '600'
+                                  }}>
+                                    {parseFloat(bus.headroom_charging || 0).toFixed(1)} MW
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       </div>
-                    </div>
-                  </div>
-                  
-                  {/* Constraint Violations Card */}
-                  <div className="dashboard-card">
-                    <h4>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" style={{display: 'inline', marginRight: '8px'}}>
-                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                        <line x1="12" y1="9" x2="12" y2="13"/>
-                        <line x1="12" y1="17" x2="12.01" y2="17"/>
-                      </svg>
-                      Constraint Types
-                    </h4>
-                    <div className="constraint-stats">
-                      <div className="constraint-row">
-                        <span className="constraint-label">Branch Charging</span>
-                        <div className="progress-bar">
-                          <div className="progress-fill" style={{width: '75%', background: '#ef4444'}}></div>
-                        </div>
-                        <span className="constraint-count">342</span>
-                      </div>
-                      <div className="constraint-row">
-                        <span className="constraint-label">Branch Discharging</span>
-                        <div className="progress-bar">
-                          <div className="progress-fill" style={{width: '68%', background: '#f59e0b'}}></div>
-                        </div>
-                        <span className="constraint-count">298</span>
-                      </div>
-                      <div className="constraint-row">
-                        <span className="constraint-label">Substation Charging</span>
-                        <div className="progress-bar">
-                          <div className="progress-fill" style={{width: '52%', background: '#3b82f6'}}></div>
-                        </div>
-                        <span className="constraint-count">224</span>
-                      </div>
-                      <div className="constraint-row">
-                        <span className="constraint-label">Substation Discharging</span>
-                        <div className="progress-bar">
-                          <div className="progress-fill" style={{width: '45%', background: '#10b981'}}></div>
-                        </div>
-                        <span className="constraint-count">187</span>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* System Overview Card */}
-                  <div className="dashboard-card">
-                    <h4>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2" style={{display: 'inline', marginRight: '8px'}}>
-                        <circle cx="12" cy="12" r="10"/>
-                        <path d="M12 6v6l4 2"/>
-                      </svg>
-                      System Overview
-                    </h4>
-                    <div className="stat-grid-horizontal">
-                      <div className="stat-item-compact">
-                        <span className="stat-label-small">Total Buses</span>
-                        <span className="stat-value-large">{buses.length}</span>
-                      </div>
-                      <div className="stat-item-compact">
-                        <span className="stat-label-small">Total Branches</span>
-                        <span className="stat-value-large">{branches.length}</span>
-                      </div>
-                      <div className="stat-item-compact">
-                        <span className="stat-label-small">Total Generators</span>
-                        <span className="stat-value-large">{generators.length}</span>
-                      </div>
-                    </div>
-                    <div className="system-status">
-                      <div className="status-indicator status-operational">
-                        <span className="status-dot"></span>
-                        <span>System Operational</span>
-                      </div>
-                      <div className="status-detail">Last updated: {new Date().toLocaleTimeString()}</div>
-                    </div>
-                  </div>
-                  
-                  {/* Peak Load Analysis Card */}
-                  <div className="dashboard-card">
-                    <h4>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2" style={{display: 'inline', marginRight: '8px'}}>
-                        <path d="M18 20V10M12 20V4M6 20v-6"/>
-                      </svg>
-                      Peak vs Off-Peak Analysis
-                    </h4>
-                    <div className="comparison-chart">
-                      <div className="comparison-item">
-                        <div className="comparison-label">Summer Peak</div>
-                        <div className="comparison-bar-group">
-                          <div className="comparison-bar peak">
-                            <div className="comparison-fill" style={{width: '90%'}}></div>
-                            <span className="comparison-value">18,245 MW</span>
-                          </div>
+                      
+                      {/* Graph 2: 5-Year Forecast (Base vs +500MW) */}
+                      <div className="dashboard-card">
+                        <h4>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" style={{display: 'inline', marginRight: '8px'}}>
+                            <line x1="12" y1="1" x2="12" y2="23"/>
+                            <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                          </svg>
+                          5-Year Forecast: Base vs +500MW ($/MWh)
+                        </h4>
+                        <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end', height: '300px', padding: '20px' }}>
+                          {dashboardData.map((bus, idx) => {
+                            const baseValue = parseFloat(bus.forecast_base) || 0;
+                            const injectionValue = parseFloat(bus.forecast_500mw) || 0;
+                            const maxValue = Math.max(baseValue, injectionValue, 100);
+                            
+                            return (
+                              <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '80px' }}>
+                                <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', height: '200px' }}>
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                    <span style={{ fontSize: '12px', fontWeight: '600', marginBottom: '4px' }}>${baseValue.toFixed(1)}</span>
+                                    <div style={{
+                                      width: '40px',
+                                      height: `${(baseValue / maxValue) * 180}px`,
+                                      background: 'linear-gradient(180deg, #3b82f6, #2563eb)',
+                                      borderRadius: '4px 4px 0 0',
+                                      minHeight: '20px'
+                                    }}></div>
+                                    <span style={{ fontSize: '10px', color: '#6b7280', marginTop: '4px' }}>Base</span>
+                                  </div>
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                    <span style={{ fontSize: '12px', fontWeight: '600', marginBottom: '4px' }}>${injectionValue.toFixed(1)}</span>
+                                    <div style={{
+                                      width: '40px',
+                                      height: `${(injectionValue / maxValue) * 180}px`,
+                                      background: 'linear-gradient(180deg, #f59e0b, #d97706)',
+                                      borderRadius: '4px 4px 0 0',
+                                      minHeight: '20px'
+                                    }}></div>
+                                    <span style={{ fontSize: '10px', color: '#6b7280', marginTop: '4px' }}>+500MW</span>
+                                  </div>
+                                </div>
+                                <div style={{ fontSize: '11px', fontWeight: '600', marginTop: '8px', textAlign: 'center', maxWidth: '80px', wordWrap: 'break-word' }}>
+                                  {bus.bus_name}
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
-                      <div className="comparison-item">
-                        <div className="comparison-label">Summer Off-Peak</div>
-                        <div className="comparison-bar-group">
-                          <div className="comparison-bar offpeak">
-                            <div className="comparison-fill" style={{width: '55%'}}></div>
-                            <span className="comparison-value">11,180 MW</span>
-                          </div>
+                      
+                      {/* Graph 3: Node vs Base vs Basis */}
+                      <div className="dashboard-card">
+                        <h4>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2" style={{display: 'inline', marginRight: '8px'}}>
+                            <circle cx="12" cy="12" r="10"/>
+                          </svg>
+                          Node LMP vs Base vs Basis ($/MWh)
+                        </h4>
+                        <div style={{ padding: '20px' }}>
+                          {dashboardData.map((bus, idx) => {
+                            const nodeLMP = parseFloat(bus.historical_average_lmp) || 0;
+                            const basis = parseFloat(bus.basis) || 0;
+                            const baseLMP = nodeLMP - basis;
+                            
+                            return (
+                              <div key={idx} style={{ marginBottom: '16px' }}>
+                                <div style={{ fontSize: '12px', fontWeight: '600', marginBottom: '8px', color: '#111827' }}>
+                                  {bus.bus_name}
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ fontSize: '11px', width: '60px', color: '#6b7280' }}>Node:</span>
+                                    <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '20px', overflow: 'hidden' }}>
+                                      <div style={{ 
+                                        width: `${Math.min(nodeLMP / 2, 100)}%`, 
+                                        background: '#6366f1', 
+                                        height: '100%',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        paddingLeft: '6px',
+                                        color: 'white',
+                                        fontSize: '10px',
+                                        fontWeight: '600'
+                                      }}>
+                                        ${nodeLMP.toFixed(2)}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ fontSize: '11px', width: '60px', color: '#6b7280' }}>Base:</span>
+                                    <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '20px', overflow: 'hidden' }}>
+                                      <div style={{ 
+                                        width: `${Math.min(baseLMP / 2, 100)}%`, 
+                                        background: '#3b82f6', 
+                                        height: '100%',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        paddingLeft: '6px',
+                                        color: 'white',
+                                        fontSize: '10px',
+                                        fontWeight: '600'
+                                      }}>
+                                        ${baseLMP.toFixed(2)}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ fontSize: '11px', width: '60px', color: '#6b7280' }}>Basis:</span>
+                                    <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '20px', overflow: 'hidden' }}>
+                                      <div style={{ 
+                                        width: `${Math.min(Math.abs(basis) / 2, 100)}%`, 
+                                        background: basis >= 0 ? '#10b981' : '#ef4444', 
+                                        height: '100%',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        paddingLeft: '6px',
+                                        color: 'white',
+                                        fontSize: '10px',
+                                        fontWeight: '600'
+                                      }}>
+                                        ${basis.toFixed(2)}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
-                      <div className="comparison-item">
-                        <div className="comparison-label">Spring Light Load</div>
-                        <div className="comparison-bar-group">
-                          <div className="comparison-bar light">
-                            <div className="comparison-fill" style={{width: '40%'}}></div>
-                            <span className="comparison-value">8,125 MW</span>
-                          </div>
+                      
+                      {/* Graph 4: Curtailment by Injection Level */}
+                      <div className="dashboard-card">
+                        <h4>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" style={{display: 'inline', marginRight: '8px'}}>
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                            <line x1="12" y1="9" x2="12" y2="13"/>
+                            <line x1="12" y1="17" x2="12.01" y2="17"/>
+                          </svg>
+                          Curtailment by Injection Level
+                        </h4>
+                        <div style={{ padding: '20px' }}>
+                          {dashboardData.map((bus, idx) => (
+                            <div key={idx} style={{ marginBottom: '16px' }}>
+                              <div style={{ fontSize: '12px', fontWeight: '600', marginBottom: '8px', color: '#111827' }}>
+                                {bus.bus_name}
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <span style={{ fontSize: '11px', width: '70px', color: '#6b7280' }}>+500MW:</span>
+                                  <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '24px', overflow: 'hidden' }}>
+                                    <div style={{ 
+                                      width: `${Math.min((parseFloat(bus.curtailment_with_500_mw) || 0), 100)}%`, 
+                                      background: 'linear-gradient(90deg, #ef4444, #dc2626)', 
+                                      height: '100%',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      paddingLeft: '8px',
+                                      color: 'white',
+                                      fontSize: '11px',
+                                      fontWeight: '600'
+                                    }}>
+                                      {parseFloat(bus.curtailment_with_500_mw || 0).toFixed(1)}%
+                                    </div>
+                                  </div>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <span style={{ fontSize: '11px', width: '70px', color: '#6b7280' }}>+250MW:</span>
+                                  <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '24px', overflow: 'hidden' }}>
+                                    <div style={{ 
+                                      width: `${Math.min((parseFloat(bus.curtailment_with_250_mw) || 0), 100)}%`, 
+                                      background: 'linear-gradient(90deg, #f59e0b, #d97706)', 
+                                      height: '100%',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      paddingLeft: '8px',
+                                      color: 'white',
+                                      fontSize: '11px',
+                                      fontWeight: '600'
+                                    }}>
+                                      {parseFloat(bus.curtailment_with_250_mw || 0).toFixed(1)}%
+                                    </div>
+                                  </div>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <span style={{ fontSize: '11px', width: '70px', color: '#6b7280' }}>+100MW:</span>
+                                  <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '24px', overflow: 'hidden' }}>
+                                    <div style={{ 
+                                      width: `${Math.min((parseFloat(bus.curtailment_with_100_mw) || 0), 100)}%`, 
+                                      background: 'linear-gradient(90deg, #10b981, #059669)', 
+                                      height: '100%',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      paddingLeft: '8px',
+                                      color: 'white',
+                                      fontSize: '11px',
+                                      fontWeight: '600'
+                                    }}>
+                                      {parseFloat(bus.curtailment_with_100_mw || 0).toFixed(1)}%
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       </div>
-                    </div>
-                  </div>
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -3840,296 +4293,285 @@ const Maps = ({ selectedISO }) => {
             </div>
             
             <div className="dashboard-modal-body">
-              <div className="dashboard-grid-modern">
-                {/* LMP Analysis Card - Large */}
-                <div className="dashboard-card-modern large-card">
-                  <h3 className="dashboard-card-title">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2">
-                      <line x1="12" y1="1" x2="12" y2="23"/>
-                      <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-                    </svg>
-                    Locational Marginal Pricing (LMP) Analysis
-                  </h3>
-                  <div className="stats-grid-modern">
-                    <div className="stat-card-modern">
-                      <span className="stat-label-modern">Avg LMP 2024</span>
-                      <span className="stat-value-modern">$45.23</span>
-                      <span className="stat-change-modern positive">+5.2% vs 2023</span>
-                    </div>
-                    <div className="stat-card-modern">
-                      <span className="stat-label-modern">Peak LMP</span>
-                      <span className="stat-value-modern" style={{color: '#ef4444'}}>$127.50</span>
-                      <span className="stat-change-modern">Aug 15, 15:00</span>
-                    </div>
-                    <div className="stat-card-modern">
-                      <span className="stat-label-modern">Min LMP</span>
-                      <span className="stat-value-modern" style={{color: '#10b981'}}>$18.75</span>
-                      <span className="stat-change-modern">Apr 3, 03:00</span>
-                    </div>
-                    <div className="stat-card-modern">
-                      <span className="stat-label-modern">Std Deviation</span>
-                      <span className="stat-value-modern">$12.34</span>
-                      <span className="stat-change-modern">Moderate</span>
-                    </div>
-                  </div>
-                  <div className="chart-container-modern">
-                    <div className="chart-title-modern">Annual LMP Trend Comparison</div>
-                    <svg viewBox="0 0 800 200" style={{width: '100%', height: '200px'}}>
-                      {/* Grid lines */}
-                      <line x1="50" y1="20" x2="750" y2="20" stroke="#e2e8f0" strokeWidth="1"/>
-                      <line x1="50" y1="60" x2="750" y2="60" stroke="#e2e8f0" strokeWidth="1"/>
-                      <line x1="50" y1="100" x2="750" y2="100" stroke="#e2e8f0" strokeWidth="1"/>
-                      <line x1="50" y1="140" x2="750" y2="140" stroke="#e2e8f0" strokeWidth="1"/>
-                      <line x1="50" y1="180" x2="750" y2="180" stroke="#e2e8f0" strokeWidth="1"/>
-                      
-                      {/* Y-axis labels */}
-                      <text x="40" y="25" fontSize="10" fill="#64748b" textAnchor="end">$120</text>
-                      <text x="40" y="65" fontSize="10" fill="#64748b" textAnchor="end">$90</text>
-                      <text x="40" y="105" fontSize="10" fill="#64748b" textAnchor="end">$60</text>
-                      <text x="40" y="145" fontSize="10" fill="#64748b" textAnchor="end">$30</text>
-                      <text x="40" y="185" fontSize="10" fill="#64748b" textAnchor="end">$0</text>
-                      
-                      {/* LMP trend line - 2024 */}
-                      <polyline
-                        fill="none"
-                        stroke="#3b82f6"
-                        strokeWidth="3"
-                        points="50,140 110,135 170,125 230,90 290,95 350,85 410,100 470,80 530,95 590,88 650,92 710,85 750,80"
-                      />
-                      
-                      {/* LMP trend line - 2023 (comparison) */}
-                      <polyline
-                        fill="none"
-                        stroke="#94a3b8"
-                        strokeWidth="2"
-                        strokeDasharray="5,5"
-                        points="50,145 110,140 170,132 230,105 290,108 350,98 410,115 470,95 530,105 590,100 650,102 710,95 750,92"
-                      />
-                      
-                      {/* Area fill under 2024 line */}
-                      <polygon
-                        fill="rgba(59, 130, 246, 0.1)"
-                        points="50,180 50,140 110,135 170,125 230,90 290,95 350,85 410,100 470,80 530,95 590,88 650,92 710,85 750,80 750,180"
-                      />
-                    </svg>
-                    <div className="chart-labels" style={{paddingLeft: '50px', paddingRight: '50px'}}>
-                      <span>Jan</span>
-                      <span>Feb</span>
-                      <span>Mar</span>
-                      <span>Apr</span>
-                      <span>May</span>
-                      <span>Jun</span>
-                      <span>Jul</span>
-                      <span>Aug</span>
-                      <span>Sep</span>
-                      <span>Oct</span>
-                      <span>Nov</span>
-                      <span>Dec</span>
-                    </div>
-                    <div style={{display: 'flex', justifyContent: 'center', gap: '20px', marginTop: '12px', fontSize: '12px'}}>
-                      <span><span style={{display: 'inline-block', width: '20px', height: '3px', background: '#3b82f6', verticalAlign: 'middle'}}></span> 2024</span>
-                      <span><span style={{display: 'inline-block', width: '20px', height: '2px', background: '#94a3b8', verticalAlign: 'middle', borderTop: '2px dashed #94a3b8'}}></span> 2023</span>
-                    </div>
-                  </div>
+              {dashboardLoading ? (
+                <div style={{ padding: '80px', textAlign: 'center', color: '#6b7280' }}>
+                  <div style={{ fontSize: '18px', fontWeight: '500' }}>Loading dashboard data...</div>
                 </div>
-                
-                {/* Voltage Distribution Card */}
-                <div className="dashboard-card-large">
-                  <h3>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" style={{display: 'inline', marginRight: '8px', verticalAlign: 'middle'}}>
-                      <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
-                    </svg>
-                    Voltage Distribution by Class
-                  </h3>
-                  <div className="large-bar-chart">
-                    <svg viewBox="0 0 400 250" style={{width: '100%', height: '250px'}}>
-                      {/* Bars */}
-                      <rect x="40" y="35" width="60" height="170" fill="#10b981" rx="4"/>
-                      <rect x="120" y="70" width="60" height="135" fill="#3b82f6" rx="4"/>
-                      <rect x="200" y="110" width="60" height="95" fill="#6366f1" rx="4"/>
-                      <rect x="280" y="145" width="60" height="60" fill="#8b5cf6" rx="4"/>
-                      <rect x="360" y="175" width="60" height="30" fill="#a855f7" rx="4"/>
-                      
-                      {/* Values on bars */}
-                      <text x="70" y="25" fontSize="16" fill="#1e293b" fontWeight="700" textAnchor="middle">245</text>
-                      <text x="150" y="60" fontSize="16" fill="#1e293b" fontWeight="700" textAnchor="middle">187</text>
-                      <text x="230" y="100" fontSize="16" fill="#1e293b" fontWeight="700" textAnchor="middle">128</text>
-                      <text x="310" y="135" fontSize="16" fill="#1e293b" fontWeight="700" textAnchor="middle">85</text>
-                      <text x="390" y="165" fontSize="16" fill="#1e293b" fontWeight="700" textAnchor="middle">42</text>
-                      
-                      {/* Labels */}
-                      <text x="70" y="225" fontSize="14" fill="#64748b" fontWeight="600" textAnchor="middle">115kV</text>
-                      <text x="150" y="225" fontSize="14" fill="#64748b" fontWeight="600" textAnchor="middle">138kV</text>
-                      <text x="230" y="225" fontSize="14" fill="#64748b" fontWeight="600" textAnchor="middle">230kV</text>
-                      <text x="310" y="225" fontSize="14" fill="#64748b" fontWeight="600" textAnchor="middle">345kV</text>
-                      <text x="390" y="225" fontSize="14" fill="#64748b" fontWeight="600" textAnchor="middle">500kV</text>
-                      
-                      {/* Axis */}
-                      <line x1="20" y1="205" x2="440" y2="205" stroke="#64748b" strokeWidth="2"/>
-                    </svg>
-                    <div style={{textAlign: 'center', marginTop: '12px', fontSize: '12px', color: '#64748b'}}>
-                      Total Buses: {buses.length}
-                    </div>
-                  </div>
+              ) : !dashboardData || dashboardData.length === 0 ? (
+                <div style={{ padding: '80px', textAlign: 'center', color: '#6b7280' }}>
+                  <p style={{ fontSize: '16px' }}>Select buses from the search bar to view detailed dashboard</p>
                 </div>
-                
-                {/* Constraint Types Breakdown */}
-                <div className="dashboard-card-large">
-                  <h3>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" style={{display: 'inline', marginRight: '8px', verticalAlign: 'middle'}}>
-                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                      <line x1="12" y1="9" x2="12" y2="13"/>
-                      <line x1="12" y1="17" x2="12.01" y2="17"/>
-                    </svg>
-                    Constraint Types Distribution
-                  </h3>
-                  <div className="constraint-stats" style={{marginTop: '20px'}}>
-                    <div className="constraint-row" style={{padding: '12px 0'}}>
-                      <span className="constraint-label" style={{minWidth: '180px', fontSize: '13px'}}>Branch Charging</span>
-                      <div className="progress-bar" style={{height: '36px'}}>
-                        <div className="progress-fill" style={{width: '75%', background: '#ef4444'}}></div>
-                      </div>
-                      <span className="constraint-count" style={{fontSize: '16px', minWidth: '60px'}}>342</span>
-                    </div>
-                    <div className="constraint-row" style={{padding: '12px 0'}}>
-                      <span className="constraint-label" style={{minWidth: '180px', fontSize: '13px'}}>Branch Discharging</span>
-                      <div className="progress-bar" style={{height: '36px'}}>
-                        <div className="progress-fill" style={{width: '68%', background: '#f59e0b'}}></div>
-                      </div>
-                      <span className="constraint-count" style={{fontSize: '16px', minWidth: '60px'}}>298</span>
-                    </div>
-                    <div className="constraint-row" style={{padding: '12px 0'}}>
-                      <span className="constraint-label" style={{minWidth: '180px', fontSize: '13px'}}>Substation Charging</span>
-                      <div className="progress-bar" style={{height: '36px'}}>
-                        <div className="progress-fill" style={{width: '52%', background: '#3b82f6'}}></div>
-                      </div>
-                      <span className="constraint-count" style={{fontSize: '16px', minWidth: '60px'}}>224</span>
-                    </div>
-                    <div className="constraint-row" style={{padding: '12px 0'}}>
-                      <span className="constraint-label" style={{minWidth: '180px', fontSize: '13px'}}>Substation Discharging</span>
-                      <div className="progress-bar" style={{height: '36px'}}>
-                        <div className="progress-fill" style={{width: '45%', background: '#10b981'}}></div>
-                      </div>
-                      <span className="constraint-count" style={{fontSize: '16px', minWidth: '60px'}}>187</span>
-                    </div>
-                  </div>
-                  <div style={{marginTop: '24px', padding: '16px', background: '#f8fafc', borderRadius: '6px'}}>
-                    <div style={{fontSize: '12px', color: '#64748b', marginBottom: '8px'}}>Total Constraints Monitored</div>
-                    <div style={{fontSize: '32px', fontWeight: '700', color: '#3b82f6'}}>1,051</div>
-                  </div>
-                </div>
-                
-                {/* Peak Load Comparison */}
-                <div className="dashboard-card-large" style={{gridColumn: 'span 2'}}>
-                  <h3>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2" style={{display: 'inline', marginRight: '8px', verticalAlign: 'middle'}}>
-                      <path d="M18 20V10M12 20V4M6 20v-6"/>
-                    </svg>
-                    Load Profile Analysis
-                  </h3>
-                  <div className="comparison-chart" style={{marginTop: '24px', gap: '20px'}}>
-                    <div className="comparison-item">
-                      <div className="comparison-label" style={{fontSize: '13px', marginBottom: '8px'}}>
-                        Summer Peak Load
-                        <span style={{float: 'right', color: '#1e293b', fontWeight: '600'}}>18,245 MW</span>
-                      </div>
-                      <div className="comparison-bar-group">
-                        <div className="comparison-bar peak" style={{height: '48px'}}>
-                          <div className="comparison-fill" style={{width: '90%'}}></div>
+              ) : (
+                <div className="dashboard-grid-modern" style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, 1fr)',
+                  gap: '24px',
+                  padding: '0'
+                }}>
+                  {/* Graph 1: Headroom by Scenario */}
+                  <div className="dashboard-card-large">
+                    <h3>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2" style={{display: 'inline', marginRight: '8px', verticalAlign: 'middle'}}>
+                        <path d="M18 20V10M12 20V4M6 20v-6"/>
+                      </svg>
+                      Headroom by Scenario
+                    </h3>
+                    <div className="bar-chart-container" style={{ height: '400px', padding: '20px', overflowY: 'auto' }}>
+                      {dashboardData.map((bus, idx) => (
+                        <div key={idx} style={{ marginBottom: '20px', paddingBottom: '20px', borderBottom: idx < dashboardData.length - 1 ? '1px solid #e5e7eb' : 'none' }}>
+                          <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', color: '#111827' }}>
+                            {bus.bus_name}
+                          </div>
+                          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px' }}>
+                            <span style={{ fontSize: '12px', width: '90px', color: '#6b7280' }}>Discharging:</span>
+                            <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '28px', overflow: 'hidden' }}>
+                              <div style={{ 
+                                width: `${Math.min((parseFloat(bus.headroom_discharging) || 0) / 1000 * 100, 100)}%`, 
+                                background: 'linear-gradient(90deg, #10b981, #059669)', 
+                                height: '100%',
+                                display: 'flex',
+                                alignItems: 'center',
+                                paddingLeft: '10px',
+                                color: 'white',
+                                fontSize: '12px',
+                                fontWeight: '600'
+                              }}>
+                                {parseFloat(bus.headroom_discharging || 0).toFixed(1)} MW
+                              </div>
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                            <span style={{ fontSize: '12px', width: '90px', color: '#6b7280' }}>Charging:</span>
+                            <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '28px', overflow: 'hidden' }}>
+                              <div style={{ 
+                                width: `${Math.min((parseFloat(bus.headroom_charging) || 0) / 1000 * 100, 100)}%`, 
+                                background: 'linear-gradient(90deg, #3b82f6, #2563eb)', 
+                                height: '100%',
+                                display: 'flex',
+                                alignItems: 'center',
+                                paddingLeft: '10px',
+                                color: 'white',
+                                fontSize: '12px',
+                                fontWeight: '600'
+                              }}>
+                                {parseFloat(bus.headroom_charging || 0).toFixed(1)} MW
+                              </div>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                      <div style={{fontSize: '11px', color: '#64748b', marginTop: '4px'}}>
-                        Capacity Factor: 90% • Typical: July-August 14:00-18:00
-                      </div>
-                    </div>
-                    <div className="comparison-item">
-                      <div className="comparison-label" style={{fontSize: '13px', marginBottom: '8px'}}>
-                        Summer Off-Peak Load
-                        <span style={{float: 'right', color: '#1e293b', fontWeight: '600'}}>11,180 MW</span>
-                      </div>
-                      <div className="comparison-bar-group">
-                        <div className="comparison-bar offpeak" style={{height: '48px'}}>
-                          <div className="comparison-fill" style={{width: '55%'}}></div>
-                        </div>
-                      </div>
-                      <div style={{fontSize: '11px', color: '#64748b', marginTop: '4px'}}>
-                        Capacity Factor: 55% • Typical: July-August 22:00-06:00
-                      </div>
-                    </div>
-                    <div className="comparison-item">
-                      <div className="comparison-label" style={{fontSize: '13px', marginBottom: '8px'}}>
-                        Spring Light Load
-                        <span style={{float: 'right', color: '#1e293b', fontWeight: '600'}}>8,125 MW</span>
-                      </div>
-                      <div className="comparison-bar-group">
-                        <div className="comparison-bar light" style={{height: '48px'}}>
-                          <div className="comparison-fill" style={{width: '40%'}}></div>
-                        </div>
-                      </div>
-                      <div style={{fontSize: '11px', color: '#64748b', marginTop: '4px'}}>
-                        Capacity Factor: 40% • Typical: April-May 02:00-05:00
-                      </div>
+                      ))}
                     </div>
                   </div>
-                  <div style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginTop: '24px', padding: '20px', background: '#f8fafc', borderRadius: '8px'}}>
-                    <div style={{textAlign: 'center'}}>
-                      <div style={{fontSize: '11px', color: '#64748b', marginBottom: '4px'}}>Peak Demand</div>
-                      <div style={{fontSize: '20px', fontWeight: '700', color: '#ef4444'}}>20,450 MW</div>
+                  
+                  {/* Graph 2: 5-Year Forecast (Base vs +500MW) */}
+                  <div className="dashboard-card-large">
+                    <h3>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" style={{display: 'inline', marginRight: '8px', verticalAlign: 'middle'}}>
+                        <line x1="12" y1="1" x2="12" y2="23"/>
+                        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                      </svg>
+                      5-Year Forecast: Base vs +500MW ($/MWh)
+                    </h3>
+                    <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end', height: '400px', padding: '20px', overflowX: 'auto' }}>
+                      {dashboardData.map((bus, idx) => {
+                        const baseValue = parseFloat(bus.forecast_base) || 0;
+                        const injectionValue = parseFloat(bus.forecast_500mw) || 0;
+                        const maxValue = Math.max(baseValue, injectionValue, 100);
+                        
+                        return (
+                          <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '100px', margin: '0 10px' }}>
+                            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', height: '280px' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                <span style={{ fontSize: '14px', fontWeight: '600', marginBottom: '6px' }}>${baseValue.toFixed(1)}</span>
+                                <div style={{
+                                  width: '50px',
+                                  height: `${(baseValue / maxValue) * 250}px`,
+                                  background: 'linear-gradient(180deg, #3b82f6, #2563eb)',
+                                  borderRadius: '4px 4px 0 0',
+                                  minHeight: '30px'
+                                }}></div>
+                                <span style={{ fontSize: '11px', color: '#6b7280', marginTop: '6px' }}>Base</span>
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                <span style={{ fontSize: '14px', fontWeight: '600', marginBottom: '6px' }}>${injectionValue.toFixed(1)}</span>
+                                <div style={{
+                                  width: '50px',
+                                  height: `${(injectionValue / maxValue) * 250}px`,
+                                  background: 'linear-gradient(180deg, #f59e0b, #d97706)',
+                                  borderRadius: '4px 4px 0 0',
+                                  minHeight: '30px'
+                                }}></div>
+                                <span style={{ fontSize: '11px', color: '#6b7280', marginTop: '6px' }}>+500MW</span>
+                              </div>
+                            </div>
+                            <div style={{ fontSize: '12px', fontWeight: '600', marginTop: '12px', textAlign: 'center', maxWidth: '100px', wordWrap: 'break-word' }}>
+                              {bus.bus_name}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                    <div style={{textAlign: 'center'}}>
-                      <div style={{fontSize: '11px', color: '#64748b', marginBottom: '4px'}}>Avg Demand</div>
-                      <div style={{fontSize: '20px', fontWeight: '700', color: '#3b82f6'}}>13,125 MW</div>
+                  </div>
+                  
+                  {/* Graph 3: Node vs Base vs Basis */}
+                  <div className="dashboard-card-large">
+                    <h3>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2" style={{display: 'inline', marginRight: '8px', verticalAlign: 'middle'}}>
+                        <circle cx="12" cy="12" r="10"/>
+                      </svg>
+                      Node LMP vs Base vs Basis ($/MWh)
+                    </h3>
+                    <div style={{ padding: '20px', height: '400px', overflowY: 'auto' }}>
+                      {dashboardData.map((bus, idx) => {
+                        const nodeLMP = parseFloat(bus.historical_average_lmp) || 0;
+                        const basis = parseFloat(bus.basis) || 0;
+                        const baseLMP = nodeLMP - basis;
+                        
+                        return (
+                          <div key={idx} style={{ marginBottom: '20px', paddingBottom: '20px', borderBottom: idx < dashboardData.length - 1 ? '1px solid #e5e7eb' : 'none' }}>
+                            <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', color: '#111827' }}>
+                              {bus.bus_name}
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <span style={{ fontSize: '12px', width: '70px', color: '#6b7280' }}>Node:</span>
+                                <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '24px', overflow: 'hidden' }}>
+                                  <div style={{ 
+                                    width: `${Math.min(nodeLMP / 2, 100)}%`, 
+                                    background: '#6366f1', 
+                                    height: '100%',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    paddingLeft: '8px',
+                                    color: 'white',
+                                    fontSize: '11px',
+                                    fontWeight: '600'
+                                  }}>
+                                    ${nodeLMP.toFixed(2)}
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <span style={{ fontSize: '12px', width: '70px', color: '#6b7280' }}>Base:</span>
+                                <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '24px', overflow: 'hidden' }}>
+                                  <div style={{ 
+                                    width: `${Math.min(baseLMP / 2, 100)}%`, 
+                                    background: '#3b82f6', 
+                                    height: '100%',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    paddingLeft: '8px',
+                                    color: 'white',
+                                    fontSize: '11px',
+                                    fontWeight: '600'
+                                  }}>
+                                    ${baseLMP.toFixed(2)}
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <span style={{ fontSize: '12px', width: '70px', color: '#6b7280' }}>Basis:</span>
+                                <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '24px', overflow: 'hidden' }}>
+                                  <div style={{ 
+                                    width: `${Math.min(Math.abs(basis) / 2, 100)}%`, 
+                                    background: basis >= 0 ? '#10b981' : '#ef4444', 
+                                    height: '100%',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    paddingLeft: '8px',
+                                    color: 'white',
+                                    fontSize: '11px',
+                                    fontWeight: '600'
+                                  }}>
+                                    ${basis.toFixed(2)}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                    <div style={{textAlign: 'center'}}>
-                      <div style={{fontSize: '11px', color: '#64748b', marginBottom: '4px'}}>Load Factor</div>
-                      <div style={{fontSize: '20px', fontWeight: '700', color: '#10b981'}}>64.2%</div>
-                    </div>
-                    <div style={{textAlign: 'center'}}>
-                      <div style={{fontSize: '11px', color: '#64748b', marginBottom: '4px'}}>Reserve Margin</div>
-                      <div style={{fontSize: '20px', fontWeight: '700', color: '#6366f1'}}>18.5%</div>
+                  </div>
+                  
+                  {/* Graph 4: Curtailment by Injection Level */}
+                  <div className="dashboard-card-large">
+                    <h3>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" style={{display: 'inline', marginRight: '8px', verticalAlign: 'middle'}}>
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                        <line x1="12" y1="9" x2="12" y2="13"/>
+                        <line x1="12" y1="17" x2="12.01" y2="17"/>
+                      </svg>
+                      Curtailment by Injection Level
+                    </h3>
+                    <div style={{ padding: '20px', height: '400px', overflowY: 'auto' }}>
+                      {dashboardData.map((bus, idx) => (
+                        <div key={idx} style={{ marginBottom: '20px', paddingBottom: '20px', borderBottom: idx < dashboardData.length - 1 ? '1px solid #e5e7eb' : 'none' }}>
+                          <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', color: '#111827' }}>
+                            {bus.bus_name}
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <span style={{ fontSize: '12px', width: '80px', color: '#6b7280' }}>+500MW:</span>
+                              <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '28px', overflow: 'hidden' }}>
+                                <div style={{ 
+                                  width: `${Math.min((parseFloat(bus.curtailment_with_500_mw) || 0), 100)}%`, 
+                                  background: 'linear-gradient(90deg, #ef4444, #dc2626)', 
+                                  height: '100%',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  paddingLeft: '10px',
+                                  color: 'white',
+                                  fontSize: '12px',
+                                  fontWeight: '600'
+                                }}>
+                                  {parseFloat(bus.curtailment_with_500_mw || 0).toFixed(1)}%
+                                </div>
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <span style={{ fontSize: '12px', width: '80px', color: '#6b7280' }}>+250MW:</span>
+                              <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '28px', overflow: 'hidden' }}>
+                                <div style={{ 
+                                  width: `${Math.min((parseFloat(bus.curtailment_with_250_mw) || 0), 100)}%`, 
+                                  background: 'linear-gradient(90deg, #f59e0b, #d97706)', 
+                                  height: '100%',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  paddingLeft: '10px',
+                                  color: 'white',
+                                  fontSize: '12px',
+                                  fontWeight: '600'
+                                }}>
+                                  {parseFloat(bus.curtailment_with_250_mw || 0).toFixed(1)}%
+                                </div>
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <span style={{ fontSize: '12px', width: '80px', color: '#6b7280' }}>+100MW:</span>
+                              <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '28px', overflow: 'hidden' }}>
+                                <div style={{ 
+                                  width: `${Math.min((parseFloat(bus.curtailment_with_100_mw) || 0), 100)}%`, 
+                                  background: 'linear-gradient(90deg, #10b981, #059669)', 
+                                  height: '100%',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  paddingLeft: '10px',
+                                  color: 'white',
+                                  fontSize: '12px',
+                                  fontWeight: '600'
+                                }}>
+                                  {parseFloat(bus.curtailment_with_100_mw || 0).toFixed(1)}%
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
-                
-                {/* System Health Status */}
-                <div className="dashboard-card-large">
-                  <h3>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2" style={{display: 'inline', marginRight: '8px', verticalAlign: 'middle'}}>
-                      <circle cx="12" cy="12" r="10"/>
-                      <path d="M12 6v6l4 2"/>
-                    </svg>
-                    System Health & Overview
-                  </h3>
-                  <div style={{marginTop: '20px'}}>
-                    <div className="system-status" style={{borderTop: 'none', paddingTop: '0', marginTop: '0', marginBottom: '20px'}}>
-                      <div className="status-indicator status-operational">
-                        <span className="status-dot"></span>
-                        <span style={{fontSize: '15px'}}>System Operational - All Systems Normal</span>
-                      </div>
-                      <div className="status-detail">Last updated: {new Date().toLocaleString()}</div>
-                    </div>
-                    
-                    <div style={{display: 'grid', gridTemplateColumns: '1fr', gap: '12px', marginTop: '24px'}}>
-                      <div style={{padding: '16px', background: '#f0fdf4', borderLeft: '4px solid #10b981', borderRadius: '6px'}}>
-                        <div style={{fontSize: '13px', fontWeight: '600', color: '#065f46', marginBottom: '4px'}}>Total Buses</div>
-                        <div style={{fontSize: '28px', fontWeight: '700', color: '#10b981'}}>{buses.length}</div>
-                      </div>
-                      <div style={{padding: '16px', background: '#eff6ff', borderLeft: '4px solid #3b82f6', borderRadius: '6px'}}>
-                        <div style={{fontSize: '13px', fontWeight: '600', color: '#1e3a8a', marginBottom: '4px'}}>Total Branches</div>
-                        <div style={{fontSize: '28px', fontWeight: '700', color: '#3b82f6'}}>{branches.length}</div>
-                      </div>
-                      <div style={{padding: '16px', background: '#fef3c7', borderLeft: '4px solid #f59e0b', borderRadius: '6px'}}>
-                        <div style={{fontSize: '13px', fontWeight: '600', color: '#78350f', marginBottom: '4px'}}>Total Generators</div>
-                        <div style={{fontSize: '28px', fontWeight: '700', color: '#f59e0b'}}>{generators.length}</div>
-                      </div>
-                      <div style={{padding: '16px', background: '#fef2f2', borderLeft: '4px solid #ef4444', borderRadius: '6px'}}>
-                        <div style={{fontSize: '13px', fontWeight: '600', color: '#7f1d1d', marginBottom: '4px'}}>Active Constraints</div>
-                        <div style={{fontSize: '28px', fontWeight: '700', color: '#ef4444'}}>1,051</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              )}
             </div>
           </div>
         </div>

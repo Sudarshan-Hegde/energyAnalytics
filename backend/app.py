@@ -273,6 +273,64 @@ def get_loss_components():
             'error': str(e)
         }), 500
 
+@app.route('/grid-data/lmp-history/<bus_id>', methods=['GET'])
+def get_lmp_history(bus_id):
+    """Get LMP history data for a specific bus or all buses"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if bus_id == 'all':
+            # Return aggregated LMP data for all buses
+            query = """
+                SELECT 
+                    bus_id,
+                    bus_name,
+                    zone,
+                    state,
+                    historical_average_lmp_2022 as lmp_2022,
+                    historical_average_lmp_2023 as lmp_2023,
+                    historical_average_lmp_2024 as lmp_2024,
+                    historical_average_lmp_2025 as lmp_2025
+                FROM buses
+                WHERE historical_average_lmp_2022 IS NOT NULL
+                ORDER BY bus_id
+            """
+            cursor.execute(query)
+        else:
+            # Return LMP data for specific bus
+            query = """
+                SELECT 
+                    bus_id,
+                    bus_name,
+                    zone,
+                    state,
+                    historical_average_lmp_2022 as lmp_2022,
+                    historical_average_lmp_2023 as lmp_2023,
+                    historical_average_lmp_2024 as lmp_2024,
+                    historical_average_lmp_2025 as lmp_2025
+                FROM buses
+                WHERE bus_id = ?
+            """
+            cursor.execute(query, (bus_id,))
+        
+        rows = cursor.fetchall()
+        lmp_data = [dict_from_row(row) for row in rows]
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'count': len(lmp_data),
+            'data': lmp_data
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 @app.route('/grid-data/bus/<int:bus_id>', methods=['GET'])
 def get_bus_by_id(bus_id):
     """Get specific bus by ID"""
@@ -587,6 +645,172 @@ def get_substation_types():
         })
         
     except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/grid-data/bus-dashboard', methods=['GET'])
+def get_bus_dashboard():
+    """Get dashboard data for selected buses"""
+    try:
+        # Get bus names from query parameter
+        bus_names = request.args.getlist('buses[]')
+        
+        if not bus_names:
+            return jsonify({
+                'success': True,
+                'data': []
+            })
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Create placeholders for IN clause
+        placeholders = ','.join('?' * len(bus_names))
+        
+        query = f"""
+            SELECT 
+                bus_name,
+                nominal_voltage,
+                zone,
+                county,
+                state,
+                CAST(headroom_capacity_substation_discharging AS REAL) as headroom_discharging,
+                CAST(headroom_capacity_substation_charging AS REAL) as headroom_charging,
+                "5_year_forecast_avg_lmp_base_case" as forecast_base,
+                "5_year_forecast_avg_lmp_after_500mw_injection" as forecast_500mw,
+                historical_average_lmp,
+                basis,
+                zonal_hub_lmp,
+                curtailment_with_500_mw,
+                curtailment_with_250_mw,
+                curtailment_with_100_mw
+            FROM buses
+            WHERE bus_name IN ({placeholders})
+        """
+        
+        cursor.execute(query, bus_names)
+        rows = cursor.fetchall()
+        
+        dashboard_data = [dict_from_row(row) for row in rows]
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'count': len(dashboard_data),
+            'data': dashboard_data
+        })
+        
+    except Exception as e:
+        print(f"Error in bus dashboard: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/grid-data/filter-options', methods=['GET'])
+def get_filter_options():
+    """Get available filter options from database"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get distinct counties
+        cursor.execute("""
+            SELECT DISTINCT county 
+            FROM buses 
+            WHERE county IS NOT NULL AND county != ''
+            ORDER BY county
+        """)
+        counties = [row[0] for row in cursor.fetchall()]
+        
+        # Get distinct voltages
+        cursor.execute("""
+            SELECT DISTINCT nominal_voltage 
+            FROM buses 
+            WHERE nominal_voltage IS NOT NULL
+            ORDER BY nominal_voltage
+        """)
+        voltages = [row[0] for row in cursor.fetchall()]
+        
+        # Get distinct scenarios (assuming they're in a scenarios column or we use predefined ones)
+        scenarios = ['Base', '500MW', '250MW', '100MW']
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'counties': counties,
+                'voltages': voltages,
+                'scenarios': scenarios
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/grid-data/coverage-metrics', methods=['GET'])
+def get_coverage_metrics():
+    """Get coverage metrics for Analysis page - ISO count, states, substations, total headroom"""
+    try:
+        threshold = request.args.get('threshold', 200, type=float)
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get ISO count
+        cursor.execute("""SELECT COUNT(DISTINCT iso) as iso_count FROM buses WHERE iso IS NOT NULL""")
+        iso_count = cursor.fetchone()[0] or 0
+        
+        # Get states count
+        cursor.execute("""SELECT COUNT(DISTINCT state) as state_count FROM buses WHERE state IS NOT NULL""")
+        state_count = cursor.fetchone()[0] or 0
+        
+        # Get total substations
+        cursor.execute("""SELECT COUNT(*) as substation_count FROM buses""")
+        substation_count = cursor.fetchone()[0] or 0
+        
+        # Calculate total headroom (industry standard: sum of discharging capacity for viable buses)
+        # Filter out buses with 0 or NULL headroom
+        cursor.execute("""
+            SELECT SUM(CAST(headroom_capacity_substation_discharging AS REAL)) as total_headroom
+            FROM buses
+            WHERE headroom_capacity_substation_discharging IS NOT NULL
+            AND CAST(headroom_capacity_substation_discharging AS REAL) > ?
+        """, (threshold,))
+        total_headroom = cursor.fetchone()[0] or 0
+        
+        # Count buses above threshold
+        cursor.execute("""
+            SELECT COUNT(*) as buses_above_threshold
+            FROM buses
+            WHERE headroom_capacity_substation_discharging IS NOT NULL
+            AND CAST(headroom_capacity_substation_discharging AS REAL) > ?
+        """, (threshold,))
+        buses_above_threshold = cursor.fetchone()[0] or 0
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'iso_count': iso_count,
+                'state_count': state_count,
+                'substation_count': substation_count,
+                'total_headroom': round(total_headroom, 2),
+                'buses_above_threshold': buses_above_threshold,
+                'threshold': threshold
+            }
+        })
+        
+    except Exception as e:
+        print(f"Error in coverage metrics: {str(e)}")
         return jsonify({
             'success': False,
             'error': str(e)

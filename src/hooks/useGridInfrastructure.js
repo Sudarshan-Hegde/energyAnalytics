@@ -130,7 +130,16 @@ const useGridInfrastructure = () => {
         lmp2022: bus.historical_average_lmp_2022,
         lmp2023: bus.historical_average_lmp_2023,
         lmp2024: bus.historical_average_lmp_2024,
-        lmp2025: bus.historical_average_lmp_2025
+        lmp2025: bus.historical_average_lmp_2025,
+        headroom_discharging: bus.headroom_capacity_substation_discharging,
+        headroom_charging: bus.headroom_capacity_substation_charging,
+        forecast_base: bus.forecast_base,
+        forecast_500mw: bus.forecast_500mw,
+        historical_average_lmp: bus.historical_average_lmp,
+        basis: bus.basis,
+        curtailment_500mw: bus.curtailment_with_500_mw,
+        curtailment_250mw: bus.curtailment_with_250_mw,
+        curtailment_100mw: bus.curtailment_with_100_mw
       }
     }))
   };

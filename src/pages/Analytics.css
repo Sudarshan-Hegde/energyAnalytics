@@ -706,6 +706,14 @@ body.resizing .dashboard-panel {
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
+.data-source-info {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #6b7280;
+  font-style: italic;
+  line-height: 1.4;
+}
+
 .field-category {
   margin-bottom: 16px;
 }
@@ -798,7 +806,7 @@ body.resizing .dashboard-panel {
 
 .chart-type-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
   gap: 12px;
   padding: 16px;
   background: #f8f9fa;
@@ -807,16 +815,17 @@ body.resizing .dashboard-panel {
 }
 
 .chart-type-btn {
-  aspect-ratio: 1;
   background: #ffffff;
   border: 2px solid #d1d5db;
   border-radius: 10px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   transition: all 0.2s ease;
-  font-size: 28px;
+  padding: 10px 6px 8px 6px;
+  min-height: 75px;
 }
 
 .chart-type-btn:hover {
@@ -834,6 +843,21 @@ body.resizing .dashboard-panel {
 
 .chart-type-btn.active .chart-icon {
   filter: grayscale(100%) brightness(200%);
+}
+
+.chart-type-btn.active .chart-type-name {
+  color: #ffffff;
+}
+
+.chart-type-name {
+  font-size: 9px;
+  font-weight: 600;
+  color: #6b7280;
+  text-align: center;
+  margin-top: 4px;
+  line-height: 1.1;
+  max-width: 100%;
+  word-wrap: break-word;
 }
 
 /* Field Wells */
