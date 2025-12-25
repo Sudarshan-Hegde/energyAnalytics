@@ -3,6 +3,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './Maps.css';
 import useGridInfrastructure from '../hooks/useGridInfrastructure';
+import { gridDataAPI } from '../services/api';
 
 const Maps = ({ selectedISO }) => {
   const mapContainer = useRef(null);
@@ -20,6 +21,16 @@ const Maps = ({ selectedISO }) => {
       if (savedState) {
         const parsed = JSON.parse(savedState);
         console.log('📂 Loading persisted Maps state:', parsed);
+        
+        // Migrate old selectedSubstations data to include bus_id if missing
+        if (parsed.selectedSubstations && Array.isArray(parsed.selectedSubstations)) {
+          parsed.selectedSubstations = parsed.selectedSubstations.map(sub => ({
+            ...sub,
+            bus_id: sub.bus_id || sub.id  // Ensure bus_id exists, fallback to id
+          }));
+          console.log('✅ Migrated selectedSubstations with bus_id:', parsed.selectedSubstations);
+        }
+        
         return parsed;
       }
     } catch (error) {
@@ -38,6 +49,9 @@ const Maps = ({ selectedISO }) => {
   const [isResizingLeft, setIsResizingLeft] = useState(false);
   const [isResizingDetail, setIsResizingDetail] = useState(false);
   const [isResizingRight, setIsResizingRight] = useState(false);
+  
+  // Store economic data for selected substations
+  const [substationEconomics, setSubstationEconomics] = useState({});
   
   // Fetch real grid infrastructure data
   const { 
@@ -276,6 +290,64 @@ const Maps = ({ selectedISO }) => {
     };
     
     fetchDashboardData();
+  }, [selectedSubstations]);
+  
+  // Fetch economic data for selected substations
+  useEffect(() => {
+    console.log('💰 Economic data useEffect triggered. Selected buses:', selectedSubstations.length);
+    
+    if (selectedSubstations.length === 0) {
+      setSubstationEconomics({});
+      return;
+    }
+    
+    const fetchEconomicData = async () => {
+      try {
+        const economicDataPromises = selectedSubstations.map(async (sub) => {
+          try {
+            console.log(`🔍 Fetching economic data for bus_id: "${sub.bus_id}" (type: ${typeof sub.bus_id})`);
+            const response = await gridDataAPI.getEconomicData(sub.bus_id);
+            console.log(`📊 Raw response for bus ${sub.bus_id}:`, JSON.stringify(response.data, null, 2));
+            
+            // Check if we got data
+            if (response.data.success) {
+              if (response.data.data && response.data.data.length > 0) {
+                console.log(`✅ Found economic data for bus ${sub.bus_id}:`, response.data.data[0]);
+                return {
+                  busId: sub.bus_id,
+                  data: response.data.data[0]
+                };
+              } else {
+                console.warn(`⚠️ No economic data found for bus ${sub.bus_id}. Response count: ${response.data.count}`);
+                return { busId: sub.bus_id, data: null };
+              }
+            } else {
+              console.error(`❌ API returned success=false for bus ${sub.bus_id}`);
+              return { busId: sub.bus_id, data: null };
+            }
+          } catch (error) {
+            console.error(`❌ Error fetching economic data for bus ${sub.bus_id}:`, error);
+            console.error('Error details:', error.response?.data || error.message);
+            return { busId: sub.bus_id, data: null };
+          }
+        });
+        
+        const results = await Promise.all(economicDataPromises);
+        const economicsMap = {};
+        results.forEach(result => {
+          // Store even if data is null, so we know we tried to fetch it
+          economicsMap[result.busId] = result.data;
+        });
+        
+        console.log('✅ All economic data loaded. Map keys:', Object.keys(economicsMap));
+        console.log('📊 Economics map:', economicsMap);
+        setSubstationEconomics(economicsMap);
+      } catch (error) {
+        console.error('❌ Error fetching economic data:', error);
+      }
+    };
+    
+    fetchEconomicData();
   }, [selectedSubstations]);
   
   // Fetch Future Outlook data when map loads
@@ -935,6 +1007,7 @@ const Maps = ({ selectedISO }) => {
             
             const substationData = {
               id: props.id,
+              bus_id: props.id,  // Add bus_id for economic data lookup
               name: props.name,
               voltage: props.voltage,
               county: props.county,
@@ -2873,18 +2946,6 @@ const Maps = ({ selectedISO }) => {
                           AI Summary Coming Soon
                         </span>
                       </div>
-                      <div className="info-row">
-                        <span className="info-label">Bus ID:</span>
-                        <span className="info-value">{substation.id}</span>
-                      </div>
-                      <div className="info-row">
-                        <span className="info-label">Voltage:</span>
-                        <span className="info-value">{substation.voltage || 'N/A'} kV</span>
-                      </div>
-                      <div className="info-row">
-                        <span className="info-label">Location:</span>
-                        <span className="info-value">{substation.county ? `${substation.county}, ${substation.state}` : substation.state || 'N/A'}</span>
-                      </div>
                     </div>
                   </details>
 
@@ -2958,39 +3019,204 @@ const Maps = ({ selectedISO }) => {
 
                   {/* SCED (formerly Financial) Dropdown */}
                   <details className="info-section">
-                    <summary className="section-title">SCED</summary>
+                    <summary className="section-title">SCED - Economic Data</summary>
                     <div className="section-content">
-                      <div className="info-row header-row">
-                        <span className="info-label">Historical Average LMP ($/MWh)</span>
-                      </div>
-                      {substation.lmp2022 && (
-                        <div className="info-row">
-                          <span className="info-label">2022:</span>
-                          <span className="info-value">${parseFloat(substation.lmp2022).toFixed(2)}</span>
+                      {(() => {
+                        const hasKey = substation.bus_id in substationEconomics;
+                        const data = substationEconomics[substation.bus_id];
+                        console.log('=== SCED Debug ===');
+                        console.log('substation object:', substation);
+                        console.log('substation.bus_id:', substation.bus_id);
+                        console.log('substationEconomics:', substationEconomics);
+                        console.log('hasKey:', hasKey);
+                        console.log('data:', data);
+                        console.log('==================');
+                        return null;
+                      })()}
+                      {substation.bus_id !== undefined && substation.bus_id in substationEconomics ? (
+                        substationEconomics[substation.bus_id] ? (
+                        <>
+                          {/* Bus Info */}
+                          {substationEconomics[substation.bus_id].zone && (
+                            <div className="info-row">
+                              <span className="info-label">Economic Zone:</span>
+                              <span className="info-value">{substationEconomics[substation.bus_id].zone}</span>
+                            </div>
+                          )}
+                          {substationEconomics[substation.bus_id].bus_name && (
+                            <div className="info-row">
+                              <span className="info-label">Bus Name:</span>
+                              <span className="info-value">{substationEconomics[substation.bus_id].bus_name}</span>
+                            </div>
+                          )}
+                          
+                          {/* Historical Average LMP */}
+                          <div className="info-row header-row" style={{marginTop: '15px'}}>
+                            <span className="info-label">Historical Average LMP ($/MWh)</span>
+                          </div>
+                          {substationEconomics[substation.bus_id].lmp_2022 && (
+                            <div className="info-row">
+                              <span className="info-label">2022:</span>
+                              <span className="info-value">${parseFloat(substationEconomics[substation.bus_id].lmp_2022).toFixed(2)}</span>
+                            </div>
+                          )}
+                          {substationEconomics[substation.bus_id].lmp_2023 && (
+                            <div className="info-row">
+                              <span className="info-label">2023:</span>
+                              <span className="info-value">${parseFloat(substationEconomics[substation.bus_id].lmp_2023).toFixed(2)}</span>
+                            </div>
+                          )}
+                          {substationEconomics[substation.bus_id].lmp_2024 && (
+                            <div className="info-row">
+                              <span className="info-label">2024:</span>
+                              <span className="info-value">${parseFloat(substationEconomics[substation.bus_id].lmp_2024).toFixed(2)}</span>
+                            </div>
+                          )}
+                          {substationEconomics[substation.bus_id].lmp_2025 && (
+                            <div className="info-row">
+                              <span className="info-label">2025:</span>
+                              <span className="info-value">${parseFloat(substationEconomics[substation.bus_id].lmp_2025).toFixed(2)}</span>
+                            </div>
+                          )}
+                          
+                          {/* Congestion Components */}
+                          <div className="info-row header-row" style={{marginTop: '15px'}}>
+                            <span className="info-label">Congestion Component ($/MWh)</span>
+                          </div>
+                          {substationEconomics[substation.bus_id].congestion_2022 && (
+                            <div className="info-row">
+                              <span className="info-label">2022:</span>
+                              <span className="info-value">${parseFloat(substationEconomics[substation.bus_id].congestion_2022).toFixed(2)}</span>
+                            </div>
+                          )}
+                          {substationEconomics[substation.bus_id].congestion_2023 && (
+                            <div className="info-row">
+                              <span className="info-label">2023:</span>
+                              <span className="info-value">${parseFloat(substationEconomics[substation.bus_id].congestion_2023).toFixed(2)}</span>
+                            </div>
+                          )}
+                          {substationEconomics[substation.bus_id].congestion_2024 && (
+                            <div className="info-row">
+                              <span className="info-label">2024:</span>
+                              <span className="info-value">${parseFloat(substationEconomics[substation.bus_id].congestion_2024).toFixed(2)}</span>
+                            </div>
+                          )}
+                          {substationEconomics[substation.bus_id].congestion_2025 && (
+                            <div className="info-row">
+                              <span className="info-label">2025:</span>
+                              <span className="info-value">${parseFloat(substationEconomics[substation.bus_id].congestion_2025).toFixed(2)}</span>
+                            </div>
+                          )}
+                          
+                          {/* Loss Components */}
+                          <div className="info-row header-row" style={{marginTop: '15px'}}>
+                            <span className="info-label">Loss Component ($/MWh)</span>
+                          </div>
+                          {substationEconomics[substation.bus_id].loss_2022 && (
+                            <div className="info-row">
+                              <span className="info-label">2022:</span>
+                              <span className="info-value">${parseFloat(substationEconomics[substation.bus_id].loss_2022).toFixed(2)}</span>
+                            </div>
+                          )}
+                          {substationEconomics[substation.bus_id].loss_2023 && (
+                            <div className="info-row">
+                              <span className="info-label">2023:</span>
+                              <span className="info-value">${parseFloat(substationEconomics[substation.bus_id].loss_2023).toFixed(2)}</span>
+                            </div>
+                          )}
+                          {substationEconomics[substation.bus_id].loss_2024 && (
+                            <div className="info-row">
+                              <span className="info-label">2024:</span>
+                              <span className="info-value">${parseFloat(substationEconomics[substation.bus_id].loss_2024).toFixed(2)}</span>
+                            </div>
+                          )}
+                          {substationEconomics[substation.bus_id].loss_2025 && (
+                            <div className="info-row">
+                              <span className="info-label">2025:</span>
+                              <span className="info-value">${parseFloat(substationEconomics[substation.bus_id].loss_2025).toFixed(2)}</span>
+                            </div>
+                          )}
+                          
+                          {/* 5-Year Forecast */}
+                          <div className="info-row header-row" style={{marginTop: '15px'}}>
+                            <span className="info-label">5-Year Forecast</span>
+                          </div>
+                          {substationEconomics[substation.bus_id].forecast_avg_lmp && (
+                            <div className="info-row">
+                              <span className="info-label">Avg LMP:</span>
+                              <span className="info-value">${parseFloat(substationEconomics[substation.bus_id].forecast_avg_lmp).toFixed(2)}/MWh</span>
+                            </div>
+                          )}
+                          {substationEconomics[substation.bus_id].forecast_max_lmp && (
+                            <div className="info-row">
+                              <span className="info-label">Max LMP:</span>
+                              <span className="info-value">${parseFloat(substationEconomics[substation.bus_id].forecast_max_lmp).toFixed(2)}/MWh</span>
+                            </div>
+                          )}
+                          {substationEconomics[substation.bus_id].forecast_min_lmp && (
+                            <div className="info-row">
+                              <span className="info-label">Min LMP:</span>
+                              <span className="info-value">${parseFloat(substationEconomics[substation.bus_id].forecast_min_lmp).toFixed(2)}/MWh</span>
+                            </div>
+                          )}
+                          {substationEconomics[substation.bus_id].forecast_energy_price && (
+                            <div className="info-row">
+                              <span className="info-label">Energy Price:</span>
+                              <span className="info-value">${parseFloat(substationEconomics[substation.bus_id].forecast_energy_price).toFixed(2)}/MWh</span>
+                            </div>
+                          )}
+                          {substationEconomics[substation.bus_id].forecast_congestion && (
+                            <div className="info-row">
+                              <span className="info-label">Congestion:</span>
+                              <span className="info-value">${parseFloat(substationEconomics[substation.bus_id].forecast_congestion).toFixed(2)}/MWh</span>
+                            </div>
+                          )}
+                          {substationEconomics[substation.bus_id].forecast_loss && (
+                            <div className="info-row">
+                              <span className="info-label">Loss:</span>
+                              <span className="info-value">${parseFloat(substationEconomics[substation.bus_id].forecast_loss).toFixed(2)}/MWh</span>
+                            </div>
+                          )}
+                          {substationEconomics[substation.bus_id].forecast_basis && (
+                            <div className="info-row">
+                              <span className="info-label">Basis:</span>
+                              <span className="info-value">${parseFloat(substationEconomics[substation.bus_id].forecast_basis).toFixed(2)}/MWh</span>
+                            </div>
+                          )}
+                          
+                          {/* Additional Economic Metrics */}
+                          {(substationEconomics[substation.bus_id].zonal_hub_lmp || substationEconomics[substation.bus_id].basis) && (
+                            <>
+                              <div className="info-row header-row" style={{marginTop: '15px'}}>
+                                <span className="info-label">Other Metrics</span>
+                              </div>
+                              {substationEconomics[substation.bus_id].zonal_hub_lmp && (
+                                <div className="info-row">
+                                  <span className="info-label">Zonal Hub LMP:</span>
+                                  <span className="info-value">${parseFloat(substationEconomics[substation.bus_id].zonal_hub_lmp).toFixed(2)}/MWh</span>
+                                </div>
+                              )}
+                              {substationEconomics[substation.bus_id].basis && (
+                                <div className="info-row">
+                                  <span className="info-label">Basis:</span>
+                                  <span className="info-value">${parseFloat(substationEconomics[substation.bus_id].basis).toFixed(2)}/MWh</span>
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </>
+                      ) : (
+                        <div className="info-row" style={{textAlign: 'center', padding: '20px'}}>
+                          <span className="info-label" style={{fontSize: '14px', color: '#f59e0b'}}>
+                            ⚠️ No economic data available for this bus
+                          </span>
                         </div>
-                      )}
-                      {substation.lmp2023 && (
-                        <div className="info-row">
-                          <span className="info-label">2023:</span>
-                          <span className="info-value">${parseFloat(substation.lmp2023).toFixed(2)}</span>
-                        </div>
-                      )}
-                      {substation.lmp2024 && (
-                        <div className="info-row">
-                          <span className="info-label">2024:</span>
-                          <span className="info-value">${parseFloat(substation.lmp2024).toFixed(2)}</span>
-                        </div>
-                      )}
-                      {substation.lmp2025 && (
-                        <div className="info-row">
-                          <span className="info-label">2025:</span>
-                          <span className="info-value">${parseFloat(substation.lmp2025).toFixed(2)}</span>
-                        </div>
-                      )}
-                      {substation.zone && (
-                        <div className="info-row">
-                          <span className="info-label">Economic Zone:</span>
-                          <span className="info-value">{substation.zone}</span>
+                      )
+                      ) : (
+                        <div className="info-row" style={{textAlign: 'center', padding: '20px'}}>
+                          <span className="info-label" style={{fontSize: '14px', color: '#6b7280'}}>
+                            ⏳ Loading economic data from database...
+                          </span>
                         </div>
                       )}
                     </div>
@@ -3698,6 +3924,7 @@ const Maps = ({ selectedISO }) => {
                                   setSelectedSubstations(prev => {
                                     const newSelection = [...prev, {
                                       id: bus.bus_id,
+                                      bus_id: bus.bus_id,  // Add bus_id for economic data lookup
                                       name: bus.bus_name,
                                       latitude: bus.latitude,
                                       longitude: bus.longitude

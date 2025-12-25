@@ -162,28 +162,62 @@ def get_generators():
 
 @app.route('/grid-data/economic', methods=['GET'])
 def get_economic_data():
-    """Get economic data (LMP history)"""
+    """Get economic data (LMP history) from econ table"""
     try:
+        bus_id = request.args.get('bus_id')
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        query = """
-            SELECT 
-                bus_id,
-                zone,
-                historical_average_lmp_2022 as lmp_2022,
-                historical_average_lmp_2023 as lmp_2023,
-                historical_average_lmp_2024 as lmp_2024,
-                historical_average_lmp_2025 as lmp_2025,
-                average_congestion_component_in_lmp as avg_congestion,
-                average_loss_component_in_lmp as avg_loss
-            FROM econ
-            ORDER BY zone, bus_id
-        """
+        if bus_id:
+            # Get detailed economic data for specific bus
+            query = """
+                SELECT 
+                    bus_id,
+                    bus_name,
+                    zone,
+                    historical_average_lmp_2022 as lmp_2022,
+                    historical_average_lmp_2023 as lmp_2023,
+                    historical_average_lmp_2024 as lmp_2024,
+                    historical_average_lmp_2025 as lmp_2025,
+                    average_congestion_component_in_lmp_2022 as congestion_2022,
+                    average_congestion_component_in_lmp_2023 as congestion_2023,
+                    average_congestion_component_in_lmp_2024 as congestion_2024,
+                    average_congestion_component_in_lmp_2025 as congestion_2025,
+                    average_loss_component_in_lmp_2022 as loss_2022,
+                    average_loss_component_in_lmp_2023 as loss_2023,
+                    average_loss_component_in_lmp_2024 as loss_2024,
+                    average_loss_component_in_lmp_2025 as loss_2025,
+                    zonal_hub_lmp,
+                    basis,
+                    "5_year_forecast_avg_lmp_base_case" as forecast_avg_lmp,
+                    "5_year_forecast_max_lmp" as forecast_max_lmp,
+                    "5_year_forecast_min_lmp" as forecast_min_lmp,
+                    "5_year_forecast_avg_energy_price" as forecast_energy_price,
+                    "5_year_forecast_avg_congestion" as forecast_congestion,
+                    "5_year_forecast_avg_loss" as forecast_loss,
+                    "5_year_forecast_avg_basis_to_system" as forecast_basis
+                FROM econ
+                WHERE bus_id = ?
+            """
+            cursor.execute(query, (bus_id,))
+        else:
+            # Get all economic data
+            query = """
+                SELECT 
+                    bus_id,
+                    zone,
+                    historical_average_lmp_2022 as lmp_2022,
+                    historical_average_lmp_2023 as lmp_2023,
+                    historical_average_lmp_2024 as lmp_2024,
+                    historical_average_lmp_2025 as lmp_2025,
+                    average_congestion_component_in_lmp as avg_congestion,
+                    average_loss_component_in_lmp as avg_loss
+                FROM econ
+                ORDER BY zone, bus_id
+            """
+            cursor.execute(query)
         
-        cursor.execute(query)
         rows = cursor.fetchall()
-        
         economic_data = [dict_from_row(row) for row in rows]
         
         conn.close()
@@ -811,6 +845,113 @@ def get_coverage_metrics():
         
     except Exception as e:
         print(f"Error in coverage metrics: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/grid-data/schema', methods=['GET'])
+def get_database_schema():
+    """Get database schema - ALL columns from ALL tables for dimensions and measurements"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get all tables
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+        tables = cursor.fetchall()
+        
+        dimensions = []
+        measures = []
+        all_columns_debug = []
+        
+        # Define numeric types that should be treated as measures
+        numeric_types = ['INT', 'REAL', 'NUMERIC', 'DECIMAL', 'FLOAT', 'DOUBLE', 'NUMBER']
+        
+        # Keywords that indicate a field should be a dimension even if numeric
+        # Only true identifiers, not measurements
+        dimension_keywords = ['_id', '_uid', '_code', 'fips_code']
+        
+        for table_row in tables:
+            table_name = table_row[0]
+            
+            # Skip internal SQLite tables
+            if table_name.startswith('sqlite_'):
+                continue
+            
+            # Get column information for this table - properly escape table name
+            try:
+                cursor.execute(f"PRAGMA table_info([{table_name}])")
+                columns = cursor.fetchall()
+            except Exception as table_error:
+                print(f"⚠️  Skipping table {table_name}: {str(table_error)}")
+                continue
+            
+            print(f"\n📋 Table: {table_name} - {len(columns)} columns")
+            
+            for col in columns:
+                col_name = col[1]
+                col_type = (col[2].upper() if col[2] else 'TEXT').strip()
+                
+                # Debug logging
+                all_columns_debug.append(f"{table_name}.{col_name} ({col_type})")
+                
+                # Check if column type is numeric (more lenient matching)
+                is_numeric = any(num_type in col_type for num_type in numeric_types) or col_type == ''
+                
+                # Check if column name suggests it's an identifier (stricter matching)
+                is_identifier = any(keyword in col_name.lower() for keyword in dimension_keywords)
+                
+                # For columns ending in _id or _uid, they're identifiers
+                if col_name.lower().endswith('_id') or col_name.lower().endswith('_uid'):
+                    is_identifier = True
+                
+                # Create field info
+                field_info = {
+                    'id': col_name,
+                    'name': col_name.replace('_', ' ').title(),
+                    'table': table_name
+                }
+                
+                # Categorize: numeric fields (except identifiers) go to measures, everything else to dimensions
+                if is_numeric and not is_identifier:
+                    # It's a measure (numeric field that's not an identifier)
+                    measures.append({
+                        **field_info,
+                        'type': 'numeric',
+                        'aggregation': ['avg', 'sum', 'min', 'max', 'count']
+                    })
+                    print(f"  ✓ MEASURE: {col_name} ({col_type})")
+                else:
+                    # It's a dimension (text, identifier, or categorical)
+                    dimensions.append({
+                        **field_info,
+                        'type': 'categorical'
+                    })
+                    print(f"  ✓ DIMENSION: {col_name} ({col_type})")
+        
+        conn.close()
+        
+        print(f"\n📊 Schema Summary:")
+        print(f"   Tables scanned: {len([t[0] for t in tables if not t[0].startswith('sqlite_')])}")
+        print(f"   Total columns: {len(all_columns_debug)}")
+        print(f"   Dimensions: {len(dimensions)}")
+        print(f"   Measures: {len(measures)}")
+        print(f"\n🔍 Sample dimensions: {[d['id'] for d in dimensions[:5]]}")
+        print(f"🔍 Sample measures: {[m['id'] for m in measures[:5]]}")
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'dimensions': dimensions,
+                'measures': measures
+            }
+        })
+        
+    except Exception as e:
+        print(f"❌ Error loading schema: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             'success': False,
             'error': str(e)

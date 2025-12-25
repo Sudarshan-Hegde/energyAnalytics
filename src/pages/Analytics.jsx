@@ -3,12 +3,29 @@ import './Analytics.css';
 import { gridDataAPI } from '../services/api';
 
 const Analytics = () => {
-  const [activeFuelTab, setActiveFuelTab] = useState('Wind');
+  // Load persisted state from localStorage
+  const loadPersistedState = () => {
+    try {
+      const savedState = localStorage.getItem('analyticsState');
+      if (savedState) {
+        const parsed = JSON.parse(savedState);
+        console.log('📂 Loading persisted Analytics state:', parsed);
+        return parsed;
+      }
+    } catch (error) {
+      console.error('Error loading persisted Analytics state:', error);
+    }
+    return null;
+  };
+  
+  const persistedState = loadPersistedState();
+  
+  const [activeFuelTab, setActiveFuelTab] = useState(persistedState?.activeFuelTab || 'Wind');
   const [showAddFuelModal, setShowAddFuelModal] = useState(false);
   const [newFuelType, setNewFuelType] = useState('');
   
   // Dashboard panels configuration with dimensions (2x2 grid layout)
-  const [panels, setPanels] = useState([
+  const [panels, setPanels] = useState(persistedState?.panels || [
     { id: 1, title: 'Panel 1', width: 50, height: 50, row: 0, col: 0, config: null },
     { id: 2, title: 'Panel 2', width: 50, height: 50, row: 0, col: 1, config: null },
     { id: 3, title: 'Panel 3', width: 50, height: 50, row: 1, col: 0, config: null },
@@ -35,6 +52,14 @@ const Analytics = () => {
     { id: 'pie', name: 'Pie', svg: '<circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10,2 A8,8 0 0,1 18,10 L10,10 Z" fill="currentColor" opacity="0.3"/>', supportsSecondaryAxis: false },
     { id: 'area', name: 'Area', svg: '<path d="M2,14 L5,10 L9,12 L13,6 L17,8 L17,16 L2,16 Z" fill="currentColor" opacity="0.3"/><polyline points="2,14 5,10 9,12 13,6 17,8" fill="none" stroke="currentColor" stroke-width="2"/>', supportsSecondaryAxis: true },
     { id: 'scatter', name: 'Scatter', svg: '<circle cx="3" cy="14" r="1.5"/><circle cx="6" cy="8" r="1.5"/><circle cx="9" cy="11" r="1.5"/><circle cx="12" cy="5" r="1.5"/><circle cx="15" cy="9" r="1.5"/><circle cx="17" cy="13" r="1.5"/>', supportsSecondaryAxis: true },
+    
+    // Combination chart types
+    { id: 'line-bar', name: 'Line + Bar', svg: '<rect x="3" y="10" width="2.5" height="6"/><rect x="7" y="7" width="2.5" height="9"/><polyline points="11,6 13.5,4 16,8" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="11" cy="6" r="1"/><circle cx="13.5" cy="4" r="1"/><circle cx="16" cy="8" r="1"/>', supportsSecondaryAxis: true },
+    { id: 'area-line', name: 'Area + Line', svg: '<path d="M2,14 L6,12 L10,14 L10,16 L2,16 Z" fill="currentColor" opacity="0.3"/><polyline points="2,14 6,12 10,14" fill="none" stroke="currentColor" stroke-width="1.5"/><polyline points="10,8 13,6 16,9" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="10" cy="8" r="1"/><circle cx="13" cy="6" r="1"/><circle cx="16" cy="9" r="1"/>', supportsSecondaryAxis: true },
+    { id: 'bar-scatter', name: 'Bar + Scatter', svg: '<rect x="3" y="10" width="2" height="6"/><rect x="7" y="8" width="2" height="8"/><circle cx="11" cy="7" r="1.2"/><circle cx="13" cy="11" r="1.2"/><circle cx="15" cy="9" r="1.2"/><circle cx="17" cy="6" r="1.2"/>', supportsSecondaryAxis: true },
+    { id: 'line-area', name: 'Line + Area', svg: '<polyline points="2,10 6,8 10,10" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="2" cy="10" r="1"/><circle cx="6" cy="8" r="1"/><circle cx="10" cy="10" r="1"/><path d="M10,12 L13,10 L16,13 L16,16 L10,16 Z" fill="currentColor" opacity="0.3"/>', supportsSecondaryAxis: true },
+    { id: 'stacked-bar-line', name: 'Stacked Bar + Line', svg: '<rect x="3" y="8" width="2" height="4" opacity="0.7"/><rect x="3" y="12" width="2" height="4" opacity="0.4"/><rect x="7" y="6" width="2" height="5" opacity="0.7"/><rect x="7" y="11" width="2" height="5" opacity="0.4"/><polyline points="11,5 13.5,3 16,6" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="11" cy="5" r="0.8"/><circle cx="13.5" cy="3" r="0.8"/><circle cx="16" cy="6" r="0.8"/>', supportsSecondaryAxis: true },
+    
     { id: 'combo', name: 'Combo', svg: '<rect x="3" y="10" width="2.5" height="6"/><rect x="7" y="7" width="2.5" height="9"/><polyline points="11,6 13.5,4 16,8" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="11" cy="6" r="1"/><circle cx="13.5" cy="4" r="1"/><circle cx="16" cy="8" r="1"/>', supportsSecondaryAxis: true },
     { id: 'stacked-bar', name: 'Stacked Bar', svg: '<rect x="3" y="6" width="3" height="4" fill="currentColor"/><rect x="3" y="10" width="3" height="6" opacity="0.6"/><rect x="8" y="4" width="3" height="5" fill="currentColor"/><rect x="8" y="9" width="3" height="7" opacity="0.6"/><rect x="13" y="8" width="3" height="3" fill="currentColor"/><rect x="13" y="11" width="3" height="5" opacity="0.6"/>', supportsSecondaryAxis: false },
     { id: 'stacked-area', name: 'Stacked Area', svg: '<path d="M2,16 L5,12 L9,13 L13,10 L17,11 L17,16 Z" fill="currentColor" opacity="0.5"/><path d="M2,10 L5,8 L9,9 L13,6 L17,7 L17,11 L13,10 L9,13 L5,12 L2,16 Z" fill="currentColor" opacity="0.3"/>', supportsSecondaryAxis: false },
@@ -73,81 +98,17 @@ const Analytics = () => {
   const [selectedDatabase, setSelectedDatabase] = useState('gridsense_iso_ne.db');
   
   // Available database fields for configuration (Task 3: All attributes from selected database/table)
-  const availableFields = {
+  const [availableFields, setAvailableFields] = useState({
     dimensions: [
-      // Buses table - Categorical dimensions
+      // Default fields - will be replaced by API data
       { id: 'bus_id', name: 'Bus ID', table: 'buses', type: 'categorical' },
-      { id: 'bus_model_id', name: 'Bus Model ID', table: 'buses', type: 'categorical' },
-      { id: 'bus_name', name: 'Bus Name', table: 'buses', type: 'categorical' },
-      { id: 'bus_name_econ', name: 'Bus Name (Economic)', table: 'buses', type: 'categorical' },
-      { id: 'area', name: 'Area', table: 'buses', type: 'categorical' },
-      { id: 'area_econ', name: 'Area (Economic)', table: 'buses', type: 'categorical' },
-      { id: 'zone', name: 'Zone', table: 'buses', type: 'categorical' },
-      { id: 'state', name: 'State', table: 'buses', type: 'categorical' },
-      { id: 'county', name: 'County', table: 'buses', type: 'categorical' },
-      { id: 'iso', name: 'ISO', table: 'buses', type: 'categorical' },
-      { id: 'confidence_level', name: 'Confidence Level', table: 'buses', type: 'categorical' },
-      { id: 'pre_existing_issues_substation_discharging', name: 'Pre-existing Issues (Discharging)', table: 'buses', type: 'categorical' },
-      { id: 'pre_existing_issues_substation_charging', name: 'Pre-existing Issues (Charging)', table: 'buses', type: 'categorical' },
-      // Generators
-      { id: 'fuel_type', name: 'Fuel Type', table: 'generators', type: 'categorical' },
-      { id: 'generator_name', name: 'Generator Name', table: 'generators', type: 'categorical' },
-      { id: 'generator_type', name: 'Generator Type', table: 'generators', type: 'categorical' },
-      // Temporal dimensions
-      { id: 'date', name: 'Date', table: 'all', type: 'temporal' },
-      { id: 'year', name: 'Year', table: 'all', type: 'temporal' },
-      { id: 'month', name: 'Month', table: 'all', type: 'temporal' },
-      { id: 'quarter', name: 'Quarter', table: 'all', type: 'temporal' },
-      { id: 'hour', name: 'Hour', table: 'all', type: 'temporal' },
-      { id: 'day_of_week', name: 'Day of Week', table: 'all', type: 'temporal' },
-      // Constraints
-      { id: 'scenario', name: 'Scenario', table: 'constraints', type: 'categorical' },
-      { id: 'status', name: 'Status', table: 'branches', type: 'categorical' }
+      { id: 'zone', name: 'Zone', table: 'buses', type: 'categorical' }
     ],
     measures: [
-      // LMP Data from buses table
-      { id: 'historical_average_lmp_2022', name: 'LMP 2022 (Avg)', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
-      { id: 'historical_average_lmp_2023', name: 'LMP 2023 (Avg)', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
-      { id: 'historical_average_lmp_2024', name: 'LMP 2024 (Avg)', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
-      { id: 'historical_average_lmp_2025', name: 'LMP 2025 (Avg)', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
-      { id: 'historical_average_lmp', name: 'LMP (Historical Avg)', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
-      // Congestion components
-      { id: 'average_congestion_component_in_lmp_2022', name: 'Congestion Component 2022', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
-      { id: 'average_congestion_component_in_lmp_2023', name: 'Congestion Component 2023', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
-      { id: 'average_congestion_component_in_lmp_2024', name: 'Congestion Component 2024', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
-      { id: 'average_congestion_component_in_lmp_2025', name: 'Congestion Component 2025', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
-      { id: 'average_congestion_component_in_lmp', name: 'Congestion Component (Avg)', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
-      // Loss components
-      { id: 'average_loss_component_in_lmp_2022', name: 'Loss Component 2022', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
-      { id: 'average_loss_component_in_lmp_2023', name: 'Loss Component 2023', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
-      { id: 'average_loss_component_in_lmp_2024', name: 'Loss Component 2024', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
-      { id: 'average_loss_component_in_lmp_2025', name: 'Loss Component 2025', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
-      // Voltage and capacity
-      { id: 'nominal_voltage', name: 'Nominal Voltage (kV)', table: 'buses', type: 'numeric', aggregation: ['avg', 'min', 'max'] },
-      { id: 'nominal_voltage_econ', name: 'Nominal Voltage (Economic)', table: 'buses', type: 'numeric', aggregation: ['avg', 'min', 'max'] },
-      { id: 'headroom_capacity_substation_discharging', name: 'Headroom Capacity (Discharging)', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
-      { id: 'headroom_capacity_substation_charging', name: 'Headroom Capacity (Charging)', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
-      // Short circuit
-      { id: '3_phase_short_circuit', name: '3-Phase Short Circuit (MVA)', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
-      { id: '3_phase_short_circuit_current', name: '3-Phase Short Circuit Current (A)', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
-      // Geographic
-      { id: 'latitude', name: 'Latitude', table: 'buses', type: 'numeric', aggregation: ['avg', 'min', 'max'] },
-      { id: 'longitude', name: 'Longitude', table: 'buses', type: 'numeric', aggregation: ['avg', 'min', 'max'] },
-      { id: 'fips_code', name: 'FIPS Code', table: 'buses', type: 'numeric', aggregation: ['count'] },
-      // Generation metrics
-      { id: 'capacity_mw', name: 'Capacity (MW)', table: 'generators', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
-      { id: 'generation_mw', name: 'Generation (MW)', table: 'generators', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
-      { id: 'efficiency', name: 'Efficiency (%)', table: 'generators', type: 'numeric', aggregation: ['avg', 'min', 'max'] },
-      { id: 'utilization', name: 'Utilization (%)', table: 'generators', type: 'numeric', aggregation: ['avg', 'min', 'max'] },
-      { id: 'emissions', name: 'Emissions (tons)', table: 'generators', type: 'numeric', aggregation: ['sum', 'avg'] },
-      // Branches
-      { id: 'power_flow', name: 'Power Flow (MW)', table: 'branches', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
-      // General
-      { id: 'load_mw', name: 'Load (MW)', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] },
-      { id: 'cost', name: 'Cost ($)', table: 'all', type: 'numeric', aggregation: ['sum', 'avg', 'min', 'max'] },
-      { id: 'count', name: 'Count', table: 'all', type: 'numeric', aggregation: ['count'] }
+      // Default fields - will be replaced by API data
+      { id: 'lmp_2022', name: 'LMP 2022', table: 'buses', type: 'numeric', aggregation: ['avg', 'sum', 'min', 'max'] }
     ]
-  };
+  });
   
   // Panel configuration state (Power BI style)
   const [panelConfig, setPanelConfig] = useState({
@@ -168,6 +129,37 @@ const Analytics = () => {
   // Real database data
   const [databaseData, setDatabaseData] = useState({});
   const [loading, setLoading] = useState(false);
+  
+  // Task 2: Resizable measurement column state
+  const [measureColumnWidth, setMeasureColumnWidth] = useState(280); // Default width
+  const [isResizingMeasureColumn, setIsResizingMeasureColumn] = useState(false);
+  const [resizeStartX, setResizeStartX] = useState(0);
+  const [resizeStartWidth, setResizeStartWidth] = useState(0);
+  
+  // Vertical resize state for dimensions and measures lists
+  const [dimensionsHeight, setDimensionsHeight] = useState(300); // Default height
+  const [measuresHeight, setMeasuresHeight] = useState(300); // Default height
+  const [isResizingDimensions, setIsResizingDimensions] = useState(false);
+  const [isResizingMeasures, setIsResizingMeasures] = useState(false);
+  const [resizeStartY, setResizeStartY] = useState(0);
+  const [resizeStartHeight, setResizeStartHeight] = useState(0);
+  
+  // Task 1: Fetch database schema dynamically
+  useEffect(() => {
+    const fetchSchema = async () => {
+      try {
+        const response = await gridDataAPI.getSchema();
+        if (response.data.success) {
+          setAvailableFields(response.data.data);
+          console.log('📊 Loaded database schema:', response.data.data);
+        }
+      } catch (error) {
+        console.error('Error fetching database schema:', error);
+      }
+    };
+    
+    fetchSchema();
+  }, []);
   
   // Fetch data from gridsense_iso_ne.db
   useEffect(() => {
@@ -193,6 +185,16 @@ const Analytics = () => {
     
     fetchData();
   }, []);
+  
+  // Persist state to localStorage whenever panels or activeFuelTab changes
+  useEffect(() => {
+    const stateToSave = {
+      panels,
+      activeFuelTab
+    };
+    localStorage.setItem('analyticsState', JSON.stringify(stateToSave));
+    console.log('💾 Saved Analytics state to localStorage');
+  }, [panels, activeFuelTab]);
   
   // Get real data from database based on configuration
   const getRealData = (config) => {
@@ -711,6 +713,1054 @@ const Analytics = () => {
       );
     }
     
+    // Area + Line Combined Chart
+    if (chartType === 'area-line') {
+      const allYFields = [...config.primaryYAxis, ...(config.secondaryYAxis || [])];
+      const maxValue = Math.max(...data.flatMap(d => 
+        allYFields.map(f => d[f.id] || 0)
+      ));
+      const chartHeight = 200;
+      const chartWidth = 450;
+      const padding = { top: 20, right: 40, bottom: 40, left: 50 };
+      const pointSpacing = chartWidth / (data.length - 1);
+      
+      // Split fields: first half as areas, second half as lines
+      const areaFields = config.primaryYAxis.slice(0, Math.ceil(config.primaryYAxis.length / 2));
+      const lineFields = [...config.primaryYAxis.slice(Math.ceil(config.primaryYAxis.length / 2)), ...(config.secondaryYAxis || [])];
+      
+      return (
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`}>
+          <defs>
+            {areaFields.map((field, j) => (
+              <linearGradient key={field.id} id={`gradient-${panel.id}-${j}`} x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stopColor={colorPalette[j % colorPalette.length]} stopOpacity="0.6" />
+                <stop offset="100%" stopColor={colorPalette[j % colorPalette.length]} stopOpacity="0.1" />
+              </linearGradient>
+            ))}
+          </defs>
+          
+          {/* Grid lines */}
+          {config.showGridLines && [0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
+            <g key={i}>
+              <line 
+                x1={padding.left} 
+                y1={padding.top + chartHeight * ratio}
+                x2={padding.left + chartWidth} 
+                y2={padding.top + chartHeight * ratio}
+                stroke="#e5e7eb" 
+                strokeWidth="1"
+              />
+              <text 
+                x={padding.left - 10} 
+                y={padding.top + chartHeight * ratio + 4}
+                textAnchor="end"
+                fontSize="10"
+                fill="#6b7280"
+              >
+                {Math.round(maxValue * (1 - ratio))}
+              </text>
+            </g>
+          ))}
+          
+          {/* Areas */}
+          {areaFields.map((field, j) => {
+            const points = data.map((d, i) => {
+              const x = padding.left + i * pointSpacing;
+              const value = d[field.id] || 0;
+              const y = padding.top + chartHeight - (value / maxValue) * chartHeight;
+              return `${x},${y}`;
+            }).join(' ');
+            
+            const areaPath = `M ${padding.left},${padding.top + chartHeight} L ${points} L ${padding.left + (data.length - 1) * pointSpacing},${padding.top + chartHeight} Z`;
+            
+            return (
+              <g key={field.id}>
+                <path
+                  d={areaPath}
+                  fill={`url(#gradient-${panel.id}-${j})`}
+                />
+                <polyline
+                  points={points}
+                  fill="none"
+                  stroke={colorPalette[j % colorPalette.length]}
+                  strokeWidth="2"
+                />
+              </g>
+            );
+          })}
+          
+          {/* Lines */}
+          {lineFields.map((field, j) => {
+            const colorIndex = areaFields.length + j;
+            const points = data.map((d, i) => {
+              const x = padding.left + i * pointSpacing;
+              const value = d[field.id] || 0;
+              const y = padding.top + chartHeight - (value / maxValue) * chartHeight;
+              return `${x},${y}`;
+            }).join(' ');
+            
+            return (
+              <g key={field.id}>
+                <polyline
+                  points={points}
+                  fill="none"
+                  stroke={colorPalette[colorIndex % colorPalette.length]}
+                  strokeWidth="2"
+                />
+                {data.map((d, i) => {
+                  const x = padding.left + i * pointSpacing;
+                  const value = d[field.id] || 0;
+                  const y = padding.top + chartHeight - (value / maxValue) * chartHeight;
+                  return (
+                    <circle
+                      key={i}
+                      cx={x}
+                      cy={y}
+                      r="3"
+                      fill={colorPalette[colorIndex % colorPalette.length]}
+                    />
+                  );
+                })}
+              </g>
+            );
+          })}
+          
+          {/* X-axis labels */}
+          {data.map((d, i) => (
+            <text
+              key={i}
+              x={padding.left + i * pointSpacing}
+              y={padding.top + chartHeight + 20}
+              textAnchor="middle"
+              fontSize="11"
+              fill="#374151"
+            >
+              {d.category}
+            </text>
+          ))}
+        </svg>
+      );
+    }
+    
+    // Scatter Chart
+    if (chartType === 'scatter') {
+      const maxValue = Math.max(...data.flatMap(d => 
+        config.primaryYAxis.map(f => d[f.id] || 0)
+      ));
+      const chartHeight = 200;
+      const chartWidth = 450;
+      const padding = { top: 20, right: 40, bottom: 40, left: 50 };
+      const pointSpacing = chartWidth / (data.length - 1);
+      
+      return (
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`}>
+          {/* Grid lines */}
+          {config.showGridLines && [0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
+            <g key={i}>
+              <line 
+                x1={padding.left} 
+                y1={padding.top + chartHeight * ratio}
+                x2={padding.left + chartWidth} 
+                y2={padding.top + chartHeight * ratio}
+                stroke="#e5e7eb" 
+                strokeWidth="1"
+              />
+              <text 
+                x={padding.left - 10} 
+                y={padding.top + chartHeight * ratio + 4}
+                textAnchor="end"
+                fontSize="10"
+                fill="#6b7280"
+              >
+                {Math.round(maxValue * (1 - ratio))}
+              </text>
+            </g>
+          ))}
+          
+          {/* Scatter points */}
+          {config.primaryYAxis.map((field, j) => (
+            <g key={field.id}>
+              {data.map((d, i) => {
+                const x = padding.left + i * pointSpacing;
+                const value = d[field.id] || 0;
+                const y = padding.top + chartHeight - (value / maxValue) * chartHeight;
+                return (
+                  <circle
+                    key={i}
+                    cx={x}
+                    cy={y}
+                    r="5"
+                    fill={colorPalette[j % colorPalette.length]}
+                    opacity="0.7"
+                  />
+                );
+              })}
+            </g>
+          ))}
+          
+          {/* X-axis labels */}
+          {data.map((d, i) => (
+            <text
+              key={i}
+              x={padding.left + i * pointSpacing}
+              y={padding.top + chartHeight + 20}
+              textAnchor="middle"
+              fontSize="11"
+              fill="#374151"
+            >
+              {d.category}
+            </text>
+          ))}
+        </svg>
+      );
+    }
+    
+    // Line + Bar Combined Chart (and 'combo')
+    if (chartType === 'line-bar' || chartType === 'combo') {
+      const allYFields = [...config.primaryYAxis, ...(config.secondaryYAxis || [])];
+      const maxValue = Math.max(...data.flatMap(d => 
+        allYFields.map(f => d[f.id] || 0)
+      ));
+      const chartHeight = 200;
+      const chartWidth = 450;
+      const padding = { top: 20, right: 40, bottom: 40, left: 50 };
+      const barWidth = (chartWidth / data.length) * 0.6;
+      const pointSpacing = chartWidth / (data.length - 1);
+      
+      const barFields = config.primaryYAxis.slice(0, Math.ceil(config.primaryYAxis.length / 2));
+      const lineFields = [...config.primaryYAxis.slice(Math.ceil(config.primaryYAxis.length / 2)), ...(config.secondaryYAxis || [])];
+      
+      return (
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`}>
+          {/* Grid lines */}
+          {config.showGridLines && [0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
+            <g key={i}>
+              <line 
+                x1={padding.left} 
+                y1={padding.top + chartHeight * ratio}
+                x2={padding.left + chartWidth} 
+                y2={padding.top + chartHeight * ratio}
+                stroke="#e5e7eb" 
+                strokeWidth="1"
+              />
+              <text 
+                x={padding.left - 10} 
+                y={padding.top + chartHeight * ratio + 4}
+                textAnchor="end"
+                fontSize="10"
+                fill="#6b7280"
+              >
+                {Math.round(maxValue * (1 - ratio))}
+              </text>
+            </g>
+          ))}
+          
+          {/* Bars */}
+          {data.map((d, i) => {
+            const xBase = padding.left + (i * chartWidth) / data.length;
+            return (
+              <g key={i}>
+                {barFields.map((field, j) => {
+                  const value = d[field.id] || 0;
+                  const barHeight = (value / maxValue) * chartHeight;
+                  const xOffset = j * (barWidth / barFields.length);
+                  return (
+                    <rect
+                      key={field.id}
+                      x={xBase + xOffset}
+                      y={padding.top + chartHeight - barHeight}
+                      width={barWidth / barFields.length}
+                      height={barHeight}
+                      fill={colorPalette[j % colorPalette.length]}
+                      opacity="0.8"
+                    />
+                  );
+                })}
+              </g>
+            );
+          })}
+          
+          {/* Lines */}
+          {lineFields.map((field, j) => {
+            const colorIndex = barFields.length + j;
+            const points = data.map((d, i) => {
+              const x = padding.left + i * pointSpacing;
+              const value = d[field.id] || 0;
+              const y = padding.top + chartHeight - (value / maxValue) * chartHeight;
+              return `${x},${y}`;
+            }).join(' ');
+            
+            return (
+              <g key={field.id}>
+                <polyline
+                  points={points}
+                  fill="none"
+                  stroke={colorPalette[colorIndex % colorPalette.length]}
+                  strokeWidth="2.5"
+                />
+                {data.map((d, i) => {
+                  const x = padding.left + i * pointSpacing;
+                  const value = d[field.id] || 0;
+                  const y = padding.top + chartHeight - (value / maxValue) * chartHeight;
+                  return (
+                    <circle
+                      key={i}
+                      cx={x}
+                      cy={y}
+                      r="4"
+                      fill={colorPalette[colorIndex % colorPalette.length]}
+                    />
+                  );
+                })}
+              </g>
+            );
+          })}
+          
+          {/* X-axis labels */}
+          {data.map((d, i) => (
+            <text
+              key={i}
+              x={padding.left + (i * chartWidth) / data.length + barWidth / 2}
+              y={padding.top + chartHeight + 20}
+              textAnchor="middle"
+              fontSize="11"
+              fill="#374151"
+            >
+              {d.category}
+            </text>
+          ))}
+        </svg>
+      );
+    }
+    
+    // Line + Area Combined Chart
+    if (chartType === 'line-area') {
+      const allYFields = [...config.primaryYAxis, ...(config.secondaryYAxis || [])];
+      const maxValue = Math.max(...data.flatMap(d => 
+        allYFields.map(f => d[f.id] || 0)
+      ));
+      const chartHeight = 200;
+      const chartWidth = 450;
+      const padding = { top: 20, right: 40, bottom: 40, left: 50 };
+      const pointSpacing = chartWidth / (data.length - 1);
+      
+      const lineFields = config.primaryYAxis.slice(0, Math.ceil(config.primaryYAxis.length / 2));
+      const areaFields = [...config.primaryYAxis.slice(Math.ceil(config.primaryYAxis.length / 2)), ...(config.secondaryYAxis || [])];
+      
+      return (
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`}>
+          <defs>
+            {areaFields.map((field, j) => (
+              <linearGradient key={field.id} id={`gradient-la-${panel.id}-${j}`} x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stopColor={colorPalette[(lineFields.length + j) % colorPalette.length]} stopOpacity="0.6" />
+                <stop offset="100%" stopColor={colorPalette[(lineFields.length + j) % colorPalette.length]} stopOpacity="0.1" />
+              </linearGradient>
+            ))}
+          </defs>
+          
+          {/* Grid lines */}
+          {config.showGridLines && [0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
+            <g key={i}>
+              <line 
+                x1={padding.left} 
+                y1={padding.top + chartHeight * ratio}
+                x2={padding.left + chartWidth} 
+                y2={padding.top + chartHeight * ratio}
+                stroke="#e5e7eb" 
+                strokeWidth="1"
+              />
+              <text 
+                x={padding.left - 10} 
+                y={padding.top + chartHeight * ratio + 4}
+                textAnchor="end"
+                fontSize="10"
+                fill="#6b7280"
+              >
+                {Math.round(maxValue * (1 - ratio))}
+              </text>
+            </g>
+          ))}
+          
+          {/* Areas */}
+          {areaFields.map((field, j) => {
+            const colorIndex = lineFields.length + j;
+            const points = data.map((d, i) => {
+              const x = padding.left + i * pointSpacing;
+              const value = d[field.id] || 0;
+              const y = padding.top + chartHeight - (value / maxValue) * chartHeight;
+              return `${x},${y}`;
+            }).join(' ');
+            
+            const areaPath = `M ${padding.left},${padding.top + chartHeight} L ${points} L ${padding.left + (data.length - 1) * pointSpacing},${padding.top + chartHeight} Z`;
+            
+            return (
+              <g key={field.id}>
+                <path
+                  d={areaPath}
+                  fill={`url(#gradient-la-${panel.id}-${j})`}
+                />
+                <polyline
+                  points={points}
+                  fill="none"
+                  stroke={colorPalette[colorIndex % colorPalette.length]}
+                  strokeWidth="2"
+                />
+              </g>
+            );
+          })}
+          
+          {/* Lines */}
+          {lineFields.map((field, j) => {
+            const points = data.map((d, i) => {
+              const x = padding.left + i * pointSpacing;
+              const value = d[field.id] || 0;
+              const y = padding.top + chartHeight - (value / maxValue) * chartHeight;
+              return `${x},${y}`;
+            }).join(' ');
+            
+            return (
+              <g key={field.id}>
+                <polyline
+                  points={points}
+                  fill="none"
+                  stroke={colorPalette[j % colorPalette.length]}
+                  strokeWidth="2.5"
+                />
+                {data.map((d, i) => {
+                  const x = padding.left + i * pointSpacing;
+                  const value = d[field.id] || 0;
+                  const y = padding.top + chartHeight - (value / maxValue) * chartHeight;
+                  return (
+                    <circle
+                      key={i}
+                      cx={x}
+                      cy={y}
+                      r="4"
+                      fill={colorPalette[j % colorPalette.length]}
+                    />
+                  );
+                })}
+              </g>
+            );
+          })}
+          
+          {/* X-axis labels */}
+          {data.map((d, i) => (
+            <text
+              key={i}
+              x={padding.left + i * pointSpacing}
+              y={padding.top + chartHeight + 20}
+              textAnchor="middle"
+              fontSize="11"
+              fill="#374151"
+            >
+              {d.category}
+            </text>
+          ))}
+        </svg>
+      );
+    }
+    
+    // Bar + Scatter Combined Chart
+    if (chartType === 'bar-scatter') {
+      const allYFields = [...config.primaryYAxis, ...(config.secondaryYAxis || [])];
+      const maxValue = Math.max(...data.flatMap(d => 
+        allYFields.map(f => d[f.id] || 0)
+      ));
+      const chartHeight = 200;
+      const chartWidth = 450;
+      const padding = { top: 20, right: 40, bottom: 40, left: 50 };
+      const barWidth = (chartWidth / data.length) * 0.6;
+      const pointSpacing = chartWidth / (data.length - 1);
+      
+      const barFields = config.primaryYAxis.slice(0, Math.ceil(config.primaryYAxis.length / 2));
+      const scatterFields = [...config.primaryYAxis.slice(Math.ceil(config.primaryYAxis.length / 2)), ...(config.secondaryYAxis || [])];
+      
+      return (
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`}>
+          {/* Grid lines */}
+          {config.showGridLines && [0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
+            <g key={i}>
+              <line 
+                x1={padding.left} 
+                y1={padding.top + chartHeight * ratio}
+                x2={padding.left + chartWidth} 
+                y2={padding.top + chartHeight * ratio}
+                stroke="#e5e7eb" 
+                strokeWidth="1"
+              />
+              <text 
+                x={padding.left - 10} 
+                y={padding.top + chartHeight * ratio + 4}
+                textAnchor="end"
+                fontSize="10"
+                fill="#6b7280"
+              >
+                {Math.round(maxValue * (1 - ratio))}
+              </text>
+            </g>
+          ))}
+          
+          {/* Bars */}
+          {data.map((d, i) => {
+            const xBase = padding.left + (i * chartWidth) / data.length;
+            return (
+              <g key={i}>
+                {barFields.map((field, j) => {
+                  const value = d[field.id] || 0;
+                  const barHeight = (value / maxValue) * chartHeight;
+                  const xOffset = j * (barWidth / barFields.length);
+                  return (
+                    <rect
+                      key={field.id}
+                      x={xBase + xOffset}
+                      y={padding.top + chartHeight - barHeight}
+                      width={barWidth / barFields.length}
+                      height={barHeight}
+                      fill={colorPalette[j % colorPalette.length]}
+                      opacity="0.8"
+                    />
+                  );
+                })}
+              </g>
+            );
+          })}
+          
+          {/* Scatter points */}
+          {scatterFields.map((field, j) => {
+            const colorIndex = barFields.length + j;
+            return (
+              <g key={field.id}>
+                {data.map((d, i) => {
+                  const x = padding.left + i * pointSpacing;
+                  const value = d[field.id] || 0;
+                  const y = padding.top + chartHeight - (value / maxValue) * chartHeight;
+                  return (
+                    <circle
+                      key={i}
+                      cx={x}
+                      cy={y}
+                      r="5"
+                      fill={colorPalette[colorIndex % colorPalette.length]}
+                      opacity="0.7"
+                    />
+                  );
+                })}
+              </g>
+            );
+          })}
+          
+          {/* X-axis labels */}
+          {data.map((d, i) => (
+            <text
+              key={i}
+              x={padding.left + (i * chartWidth) / data.length + barWidth / 2}
+              y={padding.top + chartHeight + 20}
+              textAnchor="middle"
+              fontSize="11"
+              fill="#374151"
+            >
+              {d.category}
+            </text>
+          ))}
+        </svg>
+      );
+    }
+    
+    // Stacked Bar Chart
+    if (chartType === 'stacked-bar') {
+      const chartHeight = 200;
+      const chartWidth = 450;
+      const padding = { top: 20, right: 40, bottom: 40, left: 50 };
+      const barWidth = (chartWidth / data.length) * 0.7;
+      
+      // Calculate stacked totals
+      const maxTotal = Math.max(...data.map(d => 
+        config.primaryYAxis.reduce((sum, field) => sum + (d[field.id] || 0), 0)
+      ));
+      
+      return (
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`}>
+          {/* Grid lines */}
+          {config.showGridLines && [0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
+            <g key={i}>
+              <line 
+                x1={padding.left} 
+                y1={padding.top + chartHeight * ratio}
+                x2={padding.left + chartWidth} 
+                y2={padding.top + chartHeight * ratio}
+                stroke="#e5e7eb" 
+                strokeWidth="1"
+              />
+              <text 
+                x={padding.left - 10} 
+                y={padding.top + chartHeight * ratio + 4}
+                textAnchor="end"
+                fontSize="10"
+                fill="#6b7280"
+              >
+                {Math.round(maxTotal * (1 - ratio))}
+              </text>
+            </g>
+          ))}
+          
+          {/* Stacked bars */}
+          {data.map((d, i) => {
+            const xBase = padding.left + (i * chartWidth) / data.length + (chartWidth / data.length - barWidth) / 2;
+            let cumulativeHeight = 0;
+            
+            return (
+              <g key={i}>
+                {config.primaryYAxis.map((field, j) => {
+                  const value = d[field.id] || 0;
+                  const segmentHeight = (value / maxTotal) * chartHeight;
+                  const rect = (
+                    <rect
+                      key={field.id}
+                      x={xBase}
+                      y={padding.top + chartHeight - cumulativeHeight - segmentHeight}
+                      width={barWidth}
+                      height={segmentHeight}
+                      fill={colorPalette[j % colorPalette.length]}
+                      opacity="0.85"
+                    />
+                  );
+                  cumulativeHeight += segmentHeight;
+                  return rect;
+                })}
+              </g>
+            );
+          })}
+          
+          {/* X-axis labels */}
+          {data.map((d, i) => (
+            <text
+              key={i}
+              x={padding.left + (i * chartWidth) / data.length + (chartWidth / data.length) / 2}
+              y={padding.top + chartHeight + 20}
+              textAnchor="middle"
+              fontSize="11"
+              fill="#374151"
+            >
+              {d.category}
+            </text>
+          ))}
+        </svg>
+      );
+    }
+    
+    // Stacked Area Chart
+    if (chartType === 'stacked-area') {
+      const chartHeight = 200;
+      const chartWidth = 450;
+      const padding = { top: 20, right: 40, bottom: 40, left: 50 };
+      const pointSpacing = chartWidth / (data.length - 1);
+      
+      // Calculate stacked totals
+      const maxTotal = Math.max(...data.map(d => 
+        config.primaryYAxis.reduce((sum, field) => sum + (d[field.id] || 0), 0)
+      ));
+      
+      return (
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`}>
+          <defs>
+            {config.primaryYAxis.map((field, j) => (
+              <linearGradient key={field.id} id={`gradient-sa-${panel.id}-${j}`} x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stopColor={colorPalette[j % colorPalette.length]} stopOpacity="0.7" />
+                <stop offset="100%" stopColor={colorPalette[j % colorPalette.length]} stopOpacity="0.3" />
+              </linearGradient>
+            ))}
+          </defs>
+          
+          {/* Grid lines */}
+          {config.showGridLines && [0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
+            <g key={i}>
+              <line 
+                x1={padding.left} 
+                y1={padding.top + chartHeight * ratio}
+                x2={padding.left + chartWidth} 
+                y2={padding.top + chartHeight * ratio}
+                stroke="#e5e7eb" 
+                strokeWidth="1"
+              />
+              <text 
+                x={padding.left - 10} 
+                y={padding.top + chartHeight * ratio + 4}
+                textAnchor="end"
+                fontSize="10"
+                fill="#6b7280"
+              >
+                {Math.round(maxTotal * (1 - ratio))}
+              </text>
+            </g>
+          ))}
+          
+          {/* Stacked areas */}
+          {config.primaryYAxis.map((field, j) => {
+            const points = data.map((d, i) => {
+              const x = padding.left + i * pointSpacing;
+              // Calculate cumulative value up to this field
+              let cumulativeValue = 0;
+              for (let k = 0; k <= j; k++) {
+                cumulativeValue += d[config.primaryYAxis[k].id] || 0;
+              }
+              const y = padding.top + chartHeight - (cumulativeValue / maxTotal) * chartHeight;
+              return `${x},${y}`;
+            }).join(' ');
+            
+            // Bottom line (previous layer or baseline)
+            const bottomPoints = data.map((d, i) => {
+              const x = padding.left + i * pointSpacing;
+              let cumulativeValue = 0;
+              for (let k = 0; k < j; k++) {
+                cumulativeValue += d[config.primaryYAxis[k].id] || 0;
+              }
+              const y = padding.top + chartHeight - (cumulativeValue / maxTotal) * chartHeight;
+              return `${x},${y}`;
+            }).reverse().join(' ');
+            
+            const areaPath = `M ${points} L ${bottomPoints} Z`;
+            
+            return (
+              <path
+                key={field.id}
+                d={areaPath}
+                fill={`url(#gradient-sa-${panel.id}-${j})`}
+                stroke={colorPalette[j % colorPalette.length]}
+                strokeWidth="1"
+              />
+            );
+          })}
+          
+          {/* X-axis labels */}
+          {data.map((d, i) => (
+            <text
+              key={i}
+              x={padding.left + i * pointSpacing}
+              y={padding.top + chartHeight + 20}
+              textAnchor="middle"
+              fontSize="11"
+              fill="#374151"
+            >
+              {d.category}
+            </text>
+          ))}
+        </svg>
+      );
+    }
+    
+    // Stacked Bar + Line Combined Chart
+    if (chartType === 'stacked-bar-line') {
+      const chartHeight = 200;
+      const chartWidth = 450;
+      const padding = { top: 20, right: 40, bottom: 40, left: 50 };
+      const barWidth = (chartWidth / data.length) * 0.6;
+      const pointSpacing = chartWidth / (data.length - 1);
+      
+      const barFields = config.primaryYAxis.slice(0, Math.ceil(config.primaryYAxis.length / 2));
+      const lineFields = [...config.primaryYAxis.slice(Math.ceil(config.primaryYAxis.length / 2)), ...(config.secondaryYAxis || [])];
+      
+      const maxStackedValue = Math.max(...data.map(d => 
+        barFields.reduce((sum, field) => sum + (d[field.id] || 0), 0)
+      ));
+      const maxLineValue = Math.max(...data.flatMap(d => 
+        lineFields.map(f => d[f.id] || 0)
+      ));
+      const maxValue = Math.max(maxStackedValue, maxLineValue);
+      
+      return (
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`}>
+          {/* Grid lines */}
+          {config.showGridLines && [0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
+            <g key={i}>
+              <line 
+                x1={padding.left} 
+                y1={padding.top + chartHeight * ratio}
+                x2={padding.left + chartWidth} 
+                y2={padding.top + chartHeight * ratio}
+                stroke="#e5e7eb" 
+                strokeWidth="1"
+              />
+              <text 
+                x={padding.left - 10} 
+                y={padding.top + chartHeight * ratio + 4}
+                textAnchor="end"
+                fontSize="10"
+                fill="#6b7280"
+              >
+                {Math.round(maxValue * (1 - ratio))}
+              </text>
+            </g>
+          ))}
+          
+          {/* Stacked bars */}
+          {data.map((d, i) => {
+            const xBase = padding.left + (i * chartWidth) / data.length + (chartWidth / data.length - barWidth) / 2;
+            let cumulativeHeight = 0;
+            
+            return (
+              <g key={i}>
+                {barFields.map((field, j) => {
+                  const value = d[field.id] || 0;
+                  const segmentHeight = (value / maxValue) * chartHeight;
+                  const rect = (
+                    <rect
+                      key={field.id}
+                      x={xBase}
+                      y={padding.top + chartHeight - cumulativeHeight - segmentHeight}
+                      width={barWidth}
+                      height={segmentHeight}
+                      fill={colorPalette[j % colorPalette.length]}
+                      opacity="0.75"
+                    />
+                  );
+                  cumulativeHeight += segmentHeight;
+                  return rect;
+                })}
+              </g>
+            );
+          })}
+          
+          {/* Lines */}
+          {lineFields.map((field, j) => {
+            const colorIndex = barFields.length + j;
+            const points = data.map((d, i) => {
+              const x = padding.left + i * pointSpacing;
+              const value = d[field.id] || 0;
+              const y = padding.top + chartHeight - (value / maxValue) * chartHeight;
+              return `${x},${y}`;
+            }).join(' ');
+            
+            return (
+              <g key={field.id}>
+                <polyline
+                  points={points}
+                  fill="none"
+                  stroke={colorPalette[colorIndex % colorPalette.length]}
+                  strokeWidth="2.5"
+                />
+                {data.map((d, i) => {
+                  const x = padding.left + i * pointSpacing;
+                  const value = d[field.id] || 0;
+                  const y = padding.top + chartHeight - (value / maxValue) * chartHeight;
+                  return (
+                    <circle
+                      key={i}
+                      cx={x}
+                      cy={y}
+                      r="4"
+                      fill={colorPalette[colorIndex % colorPalette.length]}
+                    />
+                  );
+                })}
+              </g>
+            );
+          })}
+          
+          {/* X-axis labels */}
+          {data.map((d, i) => (
+            <text
+              key={i}
+              x={padding.left + (i * chartWidth) / data.length + (chartWidth / data.length) / 2}
+              y={padding.top + chartHeight + 20}
+              textAnchor="middle"
+              fontSize="11"
+              fill="#374151"
+            >
+              {d.category}
+            </text>
+          ))}
+        </svg>
+      );
+    }
+    
+    // Horizontal Bar Chart
+    if (chartType === 'horizontal-bar') {
+      const maxValue = Math.max(...data.flatMap(d => 
+        config.primaryYAxis.map(f => d[f.id] || 0)
+      ));
+      const chartHeight = 200;
+      const chartWidth = 450;
+      const padding = { top: 20, right: 40, bottom: 20, left: 80 };
+      const barHeight = (chartHeight / data.length) * 0.7;
+      
+      return (
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`}>
+          {/* Grid lines */}
+          {config.showGridLines && [0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
+            <line 
+              key={i}
+              x1={padding.left + chartWidth * ratio} 
+              y1={padding.top}
+              x2={padding.left + chartWidth * ratio} 
+              y2={padding.top + chartHeight}
+              stroke="#e5e7eb" 
+              strokeWidth="1"
+            />
+          ))}
+          
+          {/* Bars */}
+          {data.map((d, i) => {
+            const yBase = padding.top + (i * chartHeight) / data.length;
+            return (
+              <g key={i}>
+                {config.primaryYAxis.map((field, j) => {
+                  const value = d[field.id] || 0;
+                  const barWidth = (value / maxValue) * chartWidth;
+                  const yOffset = j * (barHeight / config.primaryYAxis.length);
+                  return (
+                    <rect
+                      key={field.id}
+                      x={padding.left}
+                      y={yBase + yOffset + (chartHeight / data.length - barHeight) / 2}
+                      width={barWidth}
+                      height={barHeight / config.primaryYAxis.length}
+                      fill={colorPalette[j % colorPalette.length]}
+                      opacity="0.85"
+                    />
+                  );
+                })}
+                {/* Y-axis labels (categories) */}
+                <text
+                  x={padding.left - 10}
+                  y={yBase + (chartHeight / data.length) / 2 + 5}
+                  textAnchor="end"
+                  fontSize="11"
+                  fill="#374151"
+                >
+                  {d.category}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      );
+    }
+    
+    // Heatmap Chart
+    if (chartType === 'heatmap') {
+      const chartHeight = 250;
+      const chartWidth = 450;
+      const padding = { top: 40, right: 60, bottom: 60, left: 80 };
+      
+      // Calculate min and max values across all fields for color scaling
+      const allValues = data.flatMap(d => 
+        config.primaryYAxis.map(f => d[f.id] || 0)
+      );
+      const minValue = Math.min(...allValues);
+      const maxValue = Math.max(...allValues);
+      
+      const cellWidth = chartWidth / data.length;
+      const cellHeight = chartHeight / config.primaryYAxis.length;
+      
+      // Color interpolation function
+      const getHeatColor = (value) => {
+        const ratio = (value - minValue) / (maxValue - minValue || 1);
+        if (config.colorScheme === 'warm') {
+          const r = 255;
+          const g = Math.round(255 * (1 - ratio));
+          const b = Math.round(100 * (1 - ratio));
+          return `rgb(${r}, ${g}, ${b})`;
+        } else if (config.colorScheme === 'cool') {
+          const r = Math.round(100 * (1 - ratio));
+          const g = Math.round(180 + 75 * (1 - ratio));
+          const b = 255;
+          return `rgb(${r}, ${g}, ${b})`;
+        } else {
+          // Default blue gradient
+          const intensity = Math.round(59 + 196 * ratio);
+          return `rgb(59, ${intensity}, 246)`;
+        }
+      };
+      
+      return (
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`}>
+          {/* Heatmap cells */}
+          {config.primaryYAxis.map((field, rowIndex) => (
+            <g key={field.id}>
+              {data.map((d, colIndex) => {
+                const value = d[field.id] || 0;
+                const x = padding.left + colIndex * cellWidth;
+                const y = padding.top + rowIndex * cellHeight;
+                
+                return (
+                  <g key={`${field.id}-${colIndex}`}>
+                    <rect
+                      x={x}
+                      y={y}
+                      width={cellWidth}
+                      height={cellHeight}
+                      fill={getHeatColor(value)}
+                      stroke="white"
+                      strokeWidth="2"
+                    />
+                    {config.showDataLabels && (
+                      <text
+                        x={x + cellWidth / 2}
+                        y={y + cellHeight / 2 + 4}
+                        textAnchor="middle"
+                        fontSize="10"
+                        fill="white"
+                        fontWeight="600"
+                      >
+                        {Math.round(value)}
+                      </text>
+                    )}
+                  </g>
+                );
+              })}
+              {/* Y-axis labels (field names) */}
+              <text
+                x={padding.left - 10}
+                y={padding.top + rowIndex * cellHeight + cellHeight / 2 + 4}
+                textAnchor="end"
+                fontSize="11"
+                fill="#374151"
+                fontWeight="500"
+              >
+                {field.name}
+              </text>
+            </g>
+          ))}
+          
+          {/* X-axis labels (categories) */}
+          {data.map((d, i) => (
+            <text
+              key={i}
+              x={padding.left + i * cellWidth + cellWidth / 2}
+              y={padding.top + chartHeight + 20}
+              textAnchor="middle"
+              fontSize="11"
+              fill="#374151"
+              transform={`rotate(-45 ${padding.left + i * cellWidth + cellWidth / 2} ${padding.top + chartHeight + 20})`}
+            >
+              {d.category}
+            </text>
+          ))}
+          
+          {/* Color scale legend */}
+          <g transform={`translate(${padding.left + chartWidth + 20}, ${padding.top})`}>
+            <text x="0" y="-5" fontSize="10" fill="#6b7280">Max: {Math.round(maxValue)}</text>
+            {[...Array(10)].map((_, i) => {
+              const ratio = i / 9;
+              const value = minValue + (maxValue - minValue) * (1 - ratio);
+              return (
+                <rect
+                  key={i}
+                  x="0"
+                  y={i * (chartHeight / 10)}
+                  width="20"
+                  height={chartHeight / 10}
+                  fill={getHeatColor(value)}
+                />
+              );
+            })}
+            <text x="0" y={chartHeight + 15} fontSize="10" fill="#6b7280">Min: {Math.round(minValue)}</text>
+          </g>
+        </svg>
+      );
+    }
+    
     // Default fallback for other chart types
     return (
       <div className="chart-preview">
@@ -876,6 +1926,111 @@ const Analytics = () => {
     setResizing(null);
     setContainerRect(null);
   };
+  
+  // Task 2: Handlers for resizing the measure column (horizontal)
+  const handleMeasureColumnResizeStart = (e) => {
+    e.preventDefault();
+    setIsResizingMeasureColumn(true);
+    setResizeStartX(e.clientX);
+    setResizeStartWidth(measureColumnWidth);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+  
+  const handleMeasureColumnResizeMove = (e) => {
+    if (!isResizingMeasureColumn) return;
+    
+    const deltaX = e.clientX - resizeStartX;
+    const newWidth = Math.max(200, Math.min(500, resizeStartWidth + deltaX));
+    setMeasureColumnWidth(newWidth);
+  };
+  
+  const handleMeasureColumnResizeEnd = () => {
+    setIsResizingMeasureColumn(false);
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  };
+  
+  useEffect(() => {
+    if (isResizingMeasureColumn) {
+      document.addEventListener('mousemove', handleMeasureColumnResizeMove);
+      document.addEventListener('mouseup', handleMeasureColumnResizeEnd);
+      return () => {
+        document.removeEventListener('mousemove', handleMeasureColumnResizeMove);
+        document.removeEventListener('mouseup', handleMeasureColumnResizeEnd);
+      };
+    }
+  }, [isResizingMeasureColumn, resizeStartX, resizeStartWidth]);
+  
+  // Handlers for resizing dimensions list (vertical)
+  const handleDimensionsResizeStart = (e) => {
+    e.preventDefault();
+    setIsResizingDimensions(true);
+    setResizeStartY(e.clientY);
+    setResizeStartHeight(dimensionsHeight);
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
+  };
+  
+  const handleDimensionsResizeMove = (e) => {
+    if (!isResizingDimensions) return;
+    
+    const deltaY = e.clientY - resizeStartY;
+    const newHeight = Math.max(100, Math.min(600, resizeStartHeight + deltaY));
+    setDimensionsHeight(newHeight);
+  };
+  
+  const handleDimensionsResizeEnd = () => {
+    setIsResizingDimensions(false);
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  };
+  
+  useEffect(() => {
+    if (isResizingDimensions) {
+      document.addEventListener('mousemove', handleDimensionsResizeMove);
+      document.addEventListener('mouseup', handleDimensionsResizeEnd);
+      return () => {
+        document.removeEventListener('mousemove', handleDimensionsResizeMove);
+        document.removeEventListener('mouseup', handleDimensionsResizeEnd);
+      };
+    }
+  }, [isResizingDimensions, resizeStartY, resizeStartHeight]);
+  
+  // Handlers for resizing measures list (vertical)
+  const handleMeasuresResizeStart = (e) => {
+    e.preventDefault();
+    setIsResizingMeasures(true);
+    setResizeStartY(e.clientY);
+    setResizeStartHeight(measuresHeight);
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
+  };
+  
+  const handleMeasuresResizeMove = (e) => {
+    if (!isResizingMeasures) return;
+    
+    const deltaY = e.clientY - resizeStartY;
+    const newHeight = Math.max(100, Math.min(600, resizeStartHeight + deltaY));
+    setMeasuresHeight(newHeight);
+  };
+  
+  const handleMeasuresResizeEnd = () => {
+    setIsResizingMeasures(false);
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  };
+  
+  useEffect(() => {
+    if (isResizingMeasures) {
+      document.addEventListener('mousemove', handleMeasuresResizeMove);
+      document.addEventListener('mouseup', handleMeasuresResizeEnd);
+      return () => {
+        document.removeEventListener('mousemove', handleMeasuresResizeMove);
+        document.removeEventListener('mouseup', handleMeasuresResizeEnd);
+      };
+    }
+  }, [isResizingMeasures, resizeStartY, resizeStartHeight]);
   
   useEffect(() => {
     if (resizing) {
@@ -1100,7 +2255,7 @@ const Analytics = () => {
             
             <div className="powerbi-modal-body">
               {/* Left Sidebar - Field List (Power BI Fields Pane) */}
-              <div className="fields-pane">
+              <div className="fields-pane" style={{ width: `${measureColumnWidth}px` }}>
                 <div className="pane-header">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z"/>
@@ -1136,7 +2291,7 @@ const Analytics = () => {
                     </svg>
                     <h4>Dimensions</h4>
                   </div>
-                  <div className="field-list">
+                  <div className="field-list" style={{ height: `${dimensionsHeight}px` }}>
                     {availableFields.dimensions.map(field => (
                       <div 
                         key={field.id} 
@@ -1152,6 +2307,14 @@ const Analytics = () => {
                       </div>
                     ))}
                   </div>
+                  {/* Vertical resize handle for dimensions */}
+                  <div 
+                    className="field-list-resize-handle"
+                    onMouseDown={handleDimensionsResizeStart}
+                    title="Drag to resize"
+                  >
+                    <div className="resize-indicator-horizontal"></div>
+                  </div>
                 </div>
                 
                 {/* Measures Section */}
@@ -1162,7 +2325,7 @@ const Analytics = () => {
                     </svg>
                     <h4>Measures</h4>
                   </div>
-                  <div className="field-list">
+                  <div className="field-list" style={{ height: `${measuresHeight}px` }}>
                     {availableFields.measures.map(field => (
                       <div 
                         key={field.id} 
@@ -1178,6 +2341,23 @@ const Analytics = () => {
                       </div>
                     ))}
                   </div>
+                  {/* Vertical resize handle for measures */}
+                  <div 
+                    className="field-list-resize-handle"
+                    onMouseDown={handleMeasuresResizeStart}
+                    title="Drag to resize"
+                  >
+                    <div className="resize-indicator-horizontal"></div>
+                  </div>
+                </div>
+                
+                {/* Task 2: Resize handle for the fields pane */}
+                <div 
+                  className="pane-resize-handle"
+                  onMouseDown={handleMeasureColumnResizeStart}
+                  title="Drag to resize"
+                >
+                  <div className="resize-indicator"></div>
                 </div>
               </div>
               

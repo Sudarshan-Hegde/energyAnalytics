@@ -115,7 +115,10 @@ export const gridDataAPI = {
   getGeneratorsByStatus: (status) => api.get(`/grid-data/generators?status=${status}`),
   
   // Get economic data with LMP history and forecasts
-  getEconomicData: () => api.get('/grid-data/economic'),
+  getEconomicData: (busId = null) => {
+    const endpoint = busId ? `/grid-data/economic?bus_id=${busId}` : '/grid-data/economic';
+    return api.get(endpoint);
+  },
   
   // Get LMP history by bus
   getLMPHistory: (busId) => api.get(`/grid-data/lmp-history/${busId}`),
@@ -128,6 +131,9 @@ export const gridDataAPI = {
   
   // Get aggregated statistics
   getStatistics: () => api.get('/grid-data/statistics'),
+  
+  // Get database schema (dimensions and measures)
+  getSchema: () => api.get('/grid-data/schema'),
 };
 
 // WebSocket for real-time data (Kafka integration)

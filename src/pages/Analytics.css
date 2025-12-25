@@ -644,12 +644,46 @@ body.resizing .dashboard-panel {
 
 /* Fields Pane (Left Sidebar) */
 .fields-pane {
-  width: 280px;
+  min-width: 200px;
+  max-width: 500px;
   background: #f8f9fa;
   border-right: 2px solid #e5e7eb;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
+}
+
+/* Task 2: Resize handle for fields pane */
+.pane-resize-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  background: transparent;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s ease;
+}
+
+.pane-resize-handle:hover {
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.pane-resize-handle:hover .resize-indicator {
+  background: #3b82f6;
+}
+
+.resize-indicator {
+  width: 3px;
+  height: 40px;
+  background: #d1d5db;
+  border-radius: 2px;
+  transition: all 0.2s ease;
 }
 
 .pane-header {
@@ -742,7 +776,6 @@ body.resizing .dashboard-panel {
 }
 
 .field-list {
-  max-height: 300px;
   overflow-y: auto;
   padding: 8px;
 }
@@ -788,6 +821,36 @@ body.resizing .dashboard-panel {
   background: #f3f4f6;
   padding: 2px 6px;
   border-radius: 3px;
+}
+
+/* Vertical Resize Handle for Field Lists */
+.field-list-resize-handle {
+  height: 8px;
+  cursor: row-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  transition: background 0.2s ease;
+  margin: 0;
+  padding: 2px 0;
+}
+
+.field-list-resize-handle:hover {
+  background: #f3f4f6;
+}
+
+.resize-indicator-horizontal {
+  width: 40px;
+  height: 3px;
+  background: #d1d5db;
+  border-radius: 2px;
+  transition: background 0.2s ease, width 0.2s ease;
+}
+
+.field-list-resize-handle:hover .resize-indicator-horizontal {
+  background: #3b82f6;
+  width: 60px;
 }
 
 /* Visualization Pane (Center) */
