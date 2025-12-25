@@ -2874,31 +2874,8 @@ const Maps = ({ selectedISO }) => {
           </span>
           {selectedSubstations.length > 0 && (
             <button 
-              className="close-detail-btn" 
+              className="clear-all-substations-btn" 
               onClick={() => setSelectedSubstations([])}
-              style={{
-                padding: '6px 12px',
-                background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-                color: 'white',
-                border: 'none',
-                borderRadius: '5px',
-                fontWeight: '500',
-                cursor: 'pointer',
-                fontSize: '12px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                transition: 'all 0.2s ease',
-                boxShadow: '0 2px 4px rgba(245, 158, 11, 0.2)'
-              }}
-              onMouseEnter={(e) => {
-                e.target.style.transform = 'scale(1.05)';
-                e.target.style.boxShadow = '0 3px 6px rgba(245, 158, 11, 0.3)';
-              }}
-              onMouseLeave={(e) => {
-                e.target.style.transform = 'scale(1)';
-                e.target.style.boxShadow = '0 2px 4px rgba(245, 158, 11, 0.2)';
-              }}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <line x1="18" y1="6" x2="6" y2="18"/>
@@ -4061,50 +4038,44 @@ const Maps = ({ selectedISO }) => {
                           </svg>
                           Headroom by Scenario
                         </h4>
-                        <div className="bar-chart-container" style={{ height: '300px', padding: '20px' }}>
-                          {dashboardData.map((bus, idx) => (
-                            <div key={idx} style={{ marginBottom: '16px' }}>
-                              <div style={{ fontSize: '12px', fontWeight: '600', marginBottom: '8px', color: '#111827' }}>
-                                {bus.bus_name}
-                              </div>
-                              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '6px' }}>
-                                <span style={{ fontSize: '11px', width: '80px', color: '#6b7280' }}>Discharging:</span>
-                                <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '24px', overflow: 'hidden' }}>
-                                  <div style={{ 
-                                    width: `${Math.min((parseFloat(bus.headroom_discharging) || 0) / 1000 * 100, 100)}%`, 
-                                    background: 'linear-gradient(90deg, #10b981, #059669)', 
-                                    height: '100%',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    paddingLeft: '8px',
-                                    color: 'white',
-                                    fontSize: '11px',
-                                    fontWeight: '600'
-                                  }}>
-                                    {parseFloat(bus.headroom_discharging || 0).toFixed(1)} MW
+                        <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end', height: '320px', padding: '20px' }}>
+                          {dashboardData.map((bus, idx) => {
+                            const dischargingValue = parseFloat(bus.headroom_discharging) || 0;
+                            const chargingValue = parseFloat(bus.headroom_charging) || 0;
+                            const maxValue = Math.max(dischargingValue, chargingValue, 100);
+                            
+                            return (
+                              <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '80px' }}>
+                                <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', height: '220px' }}>
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                    <span style={{ fontSize: '11px', fontWeight: '600', marginBottom: '4px' }}>{dischargingValue.toFixed(1)} MW</span>
+                                    <div style={{
+                                      width: '40px',
+                                      height: `${(dischargingValue / maxValue) * 200}px`,
+                                      background: 'linear-gradient(180deg, #10b981, #059669)',
+                                      borderRadius: '4px 4px 0 0',
+                                      minHeight: '20px'
+                                    }}></div>
+                                    <span style={{ fontSize: '9px', color: '#6b7280', marginTop: '4px' }}>Discharging</span>
+                                  </div>
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                    <span style={{ fontSize: '11px', fontWeight: '600', marginBottom: '4px' }}>{chargingValue.toFixed(1)} MW</span>
+                                    <div style={{
+                                      width: '40px',
+                                      height: `${(chargingValue / maxValue) * 200}px`,
+                                      background: 'linear-gradient(180deg, #3b82f6, #2563eb)',
+                                      borderRadius: '4px 4px 0 0',
+                                      minHeight: '20px'
+                                    }}></div>
+                                    <span style={{ fontSize: '9px', color: '#6b7280', marginTop: '4px' }}>Charging</span>
                                   </div>
                                 </div>
-                              </div>
-                              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                <span style={{ fontSize: '11px', width: '80px', color: '#6b7280' }}>Charging:</span>
-                                <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '24px', overflow: 'hidden' }}>
-                                  <div style={{ 
-                                    width: `${Math.min((parseFloat(bus.headroom_charging) || 0) / 1000 * 100, 100)}%`, 
-                                    background: 'linear-gradient(90deg, #3b82f6, #2563eb)', 
-                                    height: '100%',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    paddingLeft: '8px',
-                                    color: 'white',
-                                    fontSize: '11px',
-                                    fontWeight: '600'
-                                  }}>
-                                    {parseFloat(bus.headroom_charging || 0).toFixed(1)} MW
-                                  </div>
+                                <div style={{ fontSize: '10px', fontWeight: '600', marginTop: '12px', textAlign: 'center', maxWidth: '80px', wordWrap: 'break-word' }}>
+                                  {bus.bus_name}
                                 </div>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                       
@@ -4166,72 +4137,52 @@ const Maps = ({ selectedISO }) => {
                           </svg>
                           Node LMP vs Base vs Basis ($/MWh)
                         </h4>
-                        <div style={{ padding: '20px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end', height: '320px', padding: '20px' }}>
                           {dashboardData.map((bus, idx) => {
                             const nodeLMP = parseFloat(bus.historical_average_lmp) || 0;
                             const basis = parseFloat(bus.basis) || 0;
                             const baseLMP = nodeLMP - basis;
+                            const maxValue = Math.max(nodeLMP, baseLMP, Math.abs(basis), 100);
                             
                             return (
-                              <div key={idx} style={{ marginBottom: '16px' }}>
-                                <div style={{ fontSize: '12px', fontWeight: '600', marginBottom: '8px', color: '#111827' }}>
-                                  {bus.bus_name}
+                              <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '100px' }}>
+                                <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', height: '220px' }}>
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                    <span style={{ fontSize: '11px', fontWeight: '600', marginBottom: '4px' }}>${nodeLMP.toFixed(2)}</span>
+                                    <div style={{
+                                      width: '32px',
+                                      height: `${(nodeLMP / maxValue) * 200}px`,
+                                      background: 'linear-gradient(180deg, #6366f1, #4f46e5)',
+                                      borderRadius: '4px 4px 0 0',
+                                      minHeight: '20px'
+                                    }}></div>
+                                    <span style={{ fontSize: '9px', color: '#6b7280', marginTop: '4px' }}>Node</span>
+                                  </div>
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                    <span style={{ fontSize: '11px', fontWeight: '600', marginBottom: '4px' }}>${baseLMP.toFixed(2)}</span>
+                                    <div style={{
+                                      width: '32px',
+                                      height: `${(baseLMP / maxValue) * 200}px`,
+                                      background: 'linear-gradient(180deg, #3b82f6, #2563eb)',
+                                      borderRadius: '4px 4px 0 0',
+                                      minHeight: '20px'
+                                    }}></div>
+                                    <span style={{ fontSize: '9px', color: '#6b7280', marginTop: '4px' }}>Base</span>
+                                  </div>
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                    <span style={{ fontSize: '11px', fontWeight: '600', marginBottom: '4px' }}>${basis.toFixed(2)}</span>
+                                    <div style={{
+                                      width: '32px',
+                                      height: `${(Math.abs(basis) / maxValue) * 200}px`,
+                                      background: basis >= 0 ? 'linear-gradient(180deg, #10b981, #059669)' : 'linear-gradient(180deg, #ef4444, #dc2626)',
+                                      borderRadius: '4px 4px 0 0',
+                                      minHeight: '20px'
+                                    }}></div>
+                                    <span style={{ fontSize: '9px', color: '#6b7280', marginTop: '4px' }}>Basis</span>
+                                  </div>
                                 </div>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <span style={{ fontSize: '11px', width: '60px', color: '#6b7280' }}>Node:</span>
-                                    <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '20px', overflow: 'hidden' }}>
-                                      <div style={{ 
-                                        width: `${Math.min(nodeLMP / 2, 100)}%`, 
-                                        background: '#6366f1', 
-                                        height: '100%',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        paddingLeft: '6px',
-                                        color: 'white',
-                                        fontSize: '10px',
-                                        fontWeight: '600'
-                                      }}>
-                                        ${nodeLMP.toFixed(2)}
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <span style={{ fontSize: '11px', width: '60px', color: '#6b7280' }}>Base:</span>
-                                    <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '20px', overflow: 'hidden' }}>
-                                      <div style={{ 
-                                        width: `${Math.min(baseLMP / 2, 100)}%`, 
-                                        background: '#3b82f6', 
-                                        height: '100%',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        paddingLeft: '6px',
-                                        color: 'white',
-                                        fontSize: '10px',
-                                        fontWeight: '600'
-                                      }}>
-                                        ${baseLMP.toFixed(2)}
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <span style={{ fontSize: '11px', width: '60px', color: '#6b7280' }}>Basis:</span>
-                                    <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '20px', overflow: 'hidden' }}>
-                                      <div style={{ 
-                                        width: `${Math.min(Math.abs(basis) / 2, 100)}%`, 
-                                        background: basis >= 0 ? '#10b981' : '#ef4444', 
-                                        height: '100%',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        paddingLeft: '6px',
-                                        color: 'white',
-                                        fontSize: '10px',
-                                        fontWeight: '600'
-                                      }}>
-                                        ${basis.toFixed(2)}
-                                      </div>
-                                    </div>
-                                  </div>
+                                <div style={{ fontSize: '10px', fontWeight: '600', marginTop: '12px', textAlign: 'center', maxWidth: '100px', wordWrap: 'break-word' }}>
+                                  {bus.bus_name}
                                 </div>
                               </div>
                             );
@@ -4249,70 +4200,56 @@ const Maps = ({ selectedISO }) => {
                           </svg>
                           Curtailment by Injection Level
                         </h4>
-                        <div style={{ padding: '20px' }}>
-                          {dashboardData.map((bus, idx) => (
-                            <div key={idx} style={{ marginBottom: '16px' }}>
-                              <div style={{ fontSize: '12px', fontWeight: '600', marginBottom: '8px', color: '#111827' }}>
-                                {bus.bus_name}
-                              </div>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  <span style={{ fontSize: '11px', width: '70px', color: '#6b7280' }}>+500MW:</span>
-                                  <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '24px', overflow: 'hidden' }}>
-                                    <div style={{ 
-                                      width: `${Math.min((parseFloat(bus.curtailment_with_500_mw) || 0), 100)}%`, 
-                                      background: 'linear-gradient(90deg, #ef4444, #dc2626)', 
-                                      height: '100%',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      paddingLeft: '8px',
-                                      color: 'white',
-                                      fontSize: '11px',
-                                      fontWeight: '600'
-                                    }}>
-                                      {parseFloat(bus.curtailment_with_500_mw || 0).toFixed(1)}%
-                                    </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end', height: '320px', padding: '20px' }}>
+                          {dashboardData.map((bus, idx) => {
+                            const curtailment500 = parseFloat(bus.curtailment_with_500_mw) || 0;
+                            const curtailment250 = parseFloat(bus.curtailment_with_250_mw) || 0;
+                            const curtailment100 = parseFloat(bus.curtailment_with_100_mw) || 0;
+                            const maxValue = Math.max(curtailment500, curtailment250, curtailment100, 10);
+                            
+                            return (
+                              <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '100px' }}>
+                                <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', height: '220px' }}>
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                    <span style={{ fontSize: '11px', fontWeight: '600', marginBottom: '4px' }}>{curtailment500.toFixed(1)}%</span>
+                                    <div style={{
+                                      width: '32px',
+                                      height: `${(curtailment500 / maxValue) * 200}px`,
+                                      background: 'linear-gradient(180deg, #ef4444, #dc2626)',
+                                      borderRadius: '4px 4px 0 0',
+                                      minHeight: '20px'
+                                    }}></div>
+                                    <span style={{ fontSize: '9px', color: '#6b7280', marginTop: '4px' }}>+500MW</span>
+                                  </div>
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                    <span style={{ fontSize: '11px', fontWeight: '600', marginBottom: '4px' }}>{curtailment250.toFixed(1)}%</span>
+                                    <div style={{
+                                      width: '32px',
+                                      height: `${(curtailment250 / maxValue) * 200}px`,
+                                      background: 'linear-gradient(180deg, #f59e0b, #d97706)',
+                                      borderRadius: '4px 4px 0 0',
+                                      minHeight: '20px'
+                                    }}></div>
+                                    <span style={{ fontSize: '9px', color: '#6b7280', marginTop: '4px' }}>+250MW</span>
+                                  </div>
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                    <span style={{ fontSize: '11px', fontWeight: '600', marginBottom: '4px' }}>{curtailment100.toFixed(1)}%</span>
+                                    <div style={{
+                                      width: '32px',
+                                      height: `${(curtailment100 / maxValue) * 200}px`,
+                                      background: 'linear-gradient(180deg, #10b981, #059669)',
+                                      borderRadius: '4px 4px 0 0',
+                                      minHeight: '20px'
+                                    }}></div>
+                                    <span style={{ fontSize: '9px', color: '#6b7280', marginTop: '4px' }}>+100MW</span>
                                   </div>
                                 </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  <span style={{ fontSize: '11px', width: '70px', color: '#6b7280' }}>+250MW:</span>
-                                  <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '24px', overflow: 'hidden' }}>
-                                    <div style={{ 
-                                      width: `${Math.min((parseFloat(bus.curtailment_with_250_mw) || 0), 100)}%`, 
-                                      background: 'linear-gradient(90deg, #f59e0b, #d97706)', 
-                                      height: '100%',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      paddingLeft: '8px',
-                                      color: 'white',
-                                      fontSize: '11px',
-                                      fontWeight: '600'
-                                    }}>
-                                      {parseFloat(bus.curtailment_with_250_mw || 0).toFixed(1)}%
-                                    </div>
-                                  </div>
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  <span style={{ fontSize: '11px', width: '70px', color: '#6b7280' }}>+100MW:</span>
-                                  <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '24px', overflow: 'hidden' }}>
-                                    <div style={{ 
-                                      width: `${Math.min((parseFloat(bus.curtailment_with_100_mw) || 0), 100)}%`, 
-                                      background: 'linear-gradient(90deg, #10b981, #059669)', 
-                                      height: '100%',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      paddingLeft: '8px',
-                                      color: 'white',
-                                      fontSize: '11px',
-                                      fontWeight: '600'
-                                    }}>
-                                      {parseFloat(bus.curtailment_with_100_mw || 0).toFixed(1)}%
-                                    </div>
-                                  </div>
+                                <div style={{ fontSize: '10px', fontWeight: '600', marginTop: '12px', textAlign: 'center', maxWidth: '100px', wordWrap: 'break-word' }}>
+                                  {bus.bus_name}
                                 </div>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     </>
@@ -4543,50 +4480,44 @@ const Maps = ({ selectedISO }) => {
                       </svg>
                       Headroom by Scenario
                     </h3>
-                    <div className="bar-chart-container" style={{ height: '400px', padding: '20px', overflowY: 'auto' }}>
-                      {dashboardData.map((bus, idx) => (
-                        <div key={idx} style={{ marginBottom: '20px', paddingBottom: '20px', borderBottom: idx < dashboardData.length - 1 ? '1px solid #e5e7eb' : 'none' }}>
-                          <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', color: '#111827' }}>
-                            {bus.bus_name}
-                          </div>
-                          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px' }}>
-                            <span style={{ fontSize: '12px', width: '90px', color: '#6b7280' }}>Discharging:</span>
-                            <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '28px', overflow: 'hidden' }}>
-                              <div style={{ 
-                                width: `${Math.min((parseFloat(bus.headroom_discharging) || 0) / 1000 * 100, 100)}%`, 
-                                background: 'linear-gradient(90deg, #10b981, #059669)', 
-                                height: '100%',
-                                display: 'flex',
-                                alignItems: 'center',
-                                paddingLeft: '10px',
-                                color: 'white',
-                                fontSize: '12px',
-                                fontWeight: '600'
-                              }}>
-                                {parseFloat(bus.headroom_discharging || 0).toFixed(1)} MW
+                    <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end', height: '400px', padding: '20px', overflowX: 'auto' }}>
+                      {dashboardData.map((bus, idx) => {
+                        const dischargingValue = parseFloat(bus.headroom_discharging) || 0;
+                        const chargingValue = parseFloat(bus.headroom_charging) || 0;
+                        const maxValue = Math.max(dischargingValue, chargingValue, 100);
+                        
+                        return (
+                          <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '100px', margin: '0 10px' }}>
+                            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', height: '280px' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                <span style={{ fontSize: '13px', fontWeight: '600', marginBottom: '6px' }}>{dischargingValue.toFixed(1)} MW</span>
+                                <div style={{
+                                  width: '50px',
+                                  height: `${(dischargingValue / maxValue) * 250}px`,
+                                  background: 'linear-gradient(180deg, #10b981, #059669)',
+                                  borderRadius: '4px 4px 0 0',
+                                  minHeight: '30px'
+                                }}></div>
+                                <span style={{ fontSize: '11px', color: '#6b7280', marginTop: '6px' }}>Discharging</span>
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                <span style={{ fontSize: '13px', fontWeight: '600', marginBottom: '6px' }}>{chargingValue.toFixed(1)} MW</span>
+                                <div style={{
+                                  width: '50px',
+                                  height: `${(chargingValue / maxValue) * 250}px`,
+                                  background: 'linear-gradient(180deg, #3b82f6, #2563eb)',
+                                  borderRadius: '4px 4px 0 0',
+                                  minHeight: '30px'
+                                }}></div>
+                                <span style={{ fontSize: '11px', color: '#6b7280', marginTop: '6px' }}>Charging</span>
                               </div>
                             </div>
-                          </div>
-                          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                            <span style={{ fontSize: '12px', width: '90px', color: '#6b7280' }}>Charging:</span>
-                            <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '28px', overflow: 'hidden' }}>
-                              <div style={{ 
-                                width: `${Math.min((parseFloat(bus.headroom_charging) || 0) / 1000 * 100, 100)}%`, 
-                                background: 'linear-gradient(90deg, #3b82f6, #2563eb)', 
-                                height: '100%',
-                                display: 'flex',
-                                alignItems: 'center',
-                                paddingLeft: '10px',
-                                color: 'white',
-                                fontSize: '12px',
-                                fontWeight: '600'
-                              }}>
-                                {parseFloat(bus.headroom_charging || 0).toFixed(1)} MW
-                              </div>
+                            <div style={{ fontSize: '12px', fontWeight: '600', marginTop: '12px', textAlign: 'center', maxWidth: '100px', wordWrap: 'break-word' }}>
+                              {bus.bus_name}
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                   
@@ -4648,72 +4579,52 @@ const Maps = ({ selectedISO }) => {
                       </svg>
                       Node LMP vs Base vs Basis ($/MWh)
                     </h3>
-                    <div style={{ padding: '20px', height: '400px', overflowY: 'auto' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end', height: '400px', padding: '20px', overflowX: 'auto' }}>
                       {dashboardData.map((bus, idx) => {
                         const nodeLMP = parseFloat(bus.historical_average_lmp) || 0;
                         const basis = parseFloat(bus.basis) || 0;
                         const baseLMP = nodeLMP - basis;
+                        const maxValue = Math.max(nodeLMP, baseLMP, Math.abs(basis), 100);
                         
                         return (
-                          <div key={idx} style={{ marginBottom: '20px', paddingBottom: '20px', borderBottom: idx < dashboardData.length - 1 ? '1px solid #e5e7eb' : 'none' }}>
-                            <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', color: '#111827' }}>
-                              {bus.bus_name}
+                          <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '120px', margin: '0 10px' }}>
+                            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', height: '280px' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                <span style={{ fontSize: '13px', fontWeight: '600', marginBottom: '6px' }}>${nodeLMP.toFixed(2)}</span>
+                                <div style={{
+                                  width: '40px',
+                                  height: `${(nodeLMP / maxValue) * 250}px`,
+                                  background: 'linear-gradient(180deg, #6366f1, #4f46e5)',
+                                  borderRadius: '4px 4px 0 0',
+                                  minHeight: '30px'
+                                }}></div>
+                                <span style={{ fontSize: '11px', color: '#6b7280', marginTop: '6px' }}>Node</span>
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                <span style={{ fontSize: '13px', fontWeight: '600', marginBottom: '6px' }}>${baseLMP.toFixed(2)}</span>
+                                <div style={{
+                                  width: '40px',
+                                  height: `${(baseLMP / maxValue) * 250}px`,
+                                  background: 'linear-gradient(180deg, #3b82f6, #2563eb)',
+                                  borderRadius: '4px 4px 0 0',
+                                  minHeight: '30px'
+                                }}></div>
+                                <span style={{ fontSize: '11px', color: '#6b7280', marginTop: '6px' }}>Base</span>
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                <span style={{ fontSize: '13px', fontWeight: '600', marginBottom: '6px' }}>${basis.toFixed(2)}</span>
+                                <div style={{
+                                  width: '40px',
+                                  height: `${(Math.abs(basis) / maxValue) * 250}px`,
+                                  background: basis >= 0 ? 'linear-gradient(180deg, #10b981, #059669)' : 'linear-gradient(180deg, #ef4444, #dc2626)',
+                                  borderRadius: '4px 4px 0 0',
+                                  minHeight: '30px'
+                                }}></div>
+                                <span style={{ fontSize: '11px', color: '#6b7280', marginTop: '6px' }}>Basis</span>
+                              </div>
                             </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <span style={{ fontSize: '12px', width: '70px', color: '#6b7280' }}>Node:</span>
-                                <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '24px', overflow: 'hidden' }}>
-                                  <div style={{ 
-                                    width: `${Math.min(nodeLMP / 2, 100)}%`, 
-                                    background: '#6366f1', 
-                                    height: '100%',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    paddingLeft: '8px',
-                                    color: 'white',
-                                    fontSize: '11px',
-                                    fontWeight: '600'
-                                  }}>
-                                    ${nodeLMP.toFixed(2)}
-                                  </div>
-                                </div>
-                              </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <span style={{ fontSize: '12px', width: '70px', color: '#6b7280' }}>Base:</span>
-                                <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '24px', overflow: 'hidden' }}>
-                                  <div style={{ 
-                                    width: `${Math.min(baseLMP / 2, 100)}%`, 
-                                    background: '#3b82f6', 
-                                    height: '100%',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    paddingLeft: '8px',
-                                    color: 'white',
-                                    fontSize: '11px',
-                                    fontWeight: '600'
-                                  }}>
-                                    ${baseLMP.toFixed(2)}
-                                  </div>
-                                </div>
-                              </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <span style={{ fontSize: '12px', width: '70px', color: '#6b7280' }}>Basis:</span>
-                                <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '24px', overflow: 'hidden' }}>
-                                  <div style={{ 
-                                    width: `${Math.min(Math.abs(basis) / 2, 100)}%`, 
-                                    background: basis >= 0 ? '#10b981' : '#ef4444', 
-                                    height: '100%',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    paddingLeft: '8px',
-                                    color: 'white',
-                                    fontSize: '11px',
-                                    fontWeight: '600'
-                                  }}>
-                                    ${basis.toFixed(2)}
-                                  </div>
-                                </div>
-                              </div>
+                            <div style={{ fontSize: '12px', fontWeight: '600', marginTop: '12px', textAlign: 'center', maxWidth: '120px', wordWrap: 'break-word' }}>
+                              {bus.bus_name}
                             </div>
                           </div>
                         );
@@ -4731,70 +4642,56 @@ const Maps = ({ selectedISO }) => {
                       </svg>
                       Curtailment by Injection Level
                     </h3>
-                    <div style={{ padding: '20px', height: '400px', overflowY: 'auto' }}>
-                      {dashboardData.map((bus, idx) => (
-                        <div key={idx} style={{ marginBottom: '20px', paddingBottom: '20px', borderBottom: idx < dashboardData.length - 1 ? '1px solid #e5e7eb' : 'none' }}>
-                          <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', color: '#111827' }}>
-                            {bus.bus_name}
-                          </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                              <span style={{ fontSize: '12px', width: '80px', color: '#6b7280' }}>+500MW:</span>
-                              <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '28px', overflow: 'hidden' }}>
-                                <div style={{ 
-                                  width: `${Math.min((parseFloat(bus.curtailment_with_500_mw) || 0), 100)}%`, 
-                                  background: 'linear-gradient(90deg, #ef4444, #dc2626)', 
-                                  height: '100%',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  paddingLeft: '10px',
-                                  color: 'white',
-                                  fontSize: '12px',
-                                  fontWeight: '600'
-                                }}>
-                                  {parseFloat(bus.curtailment_with_500_mw || 0).toFixed(1)}%
-                                </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end', height: '400px', padding: '20px', overflowX: 'auto' }}>
+                      {dashboardData.map((bus, idx) => {
+                        const curtailment500 = parseFloat(bus.curtailment_with_500_mw) || 0;
+                        const curtailment250 = parseFloat(bus.curtailment_with_250_mw) || 0;
+                        const curtailment100 = parseFloat(bus.curtailment_with_100_mw) || 0;
+                        const maxValue = Math.max(curtailment500, curtailment250, curtailment100, 10);
+                        
+                        return (
+                          <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '120px', margin: '0 10px' }}>
+                            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', height: '280px' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                <span style={{ fontSize: '13px', fontWeight: '600', marginBottom: '6px' }}>{curtailment500.toFixed(1)}%</span>
+                                <div style={{
+                                  width: '40px',
+                                  height: `${(curtailment500 / maxValue) * 250}px`,
+                                  background: 'linear-gradient(180deg, #ef4444, #dc2626)',
+                                  borderRadius: '4px 4px 0 0',
+                                  minHeight: '30px'
+                                }}></div>
+                                <span style={{ fontSize: '11px', color: '#6b7280', marginTop: '6px' }}>+500MW</span>
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                <span style={{ fontSize: '13px', fontWeight: '600', marginBottom: '6px' }}>{curtailment250.toFixed(1)}%</span>
+                                <div style={{
+                                  width: '40px',
+                                  height: `${(curtailment250 / maxValue) * 250}px`,
+                                  background: 'linear-gradient(180deg, #f59e0b, #d97706)',
+                                  borderRadius: '4px 4px 0 0',
+                                  minHeight: '30px'
+                                }}></div>
+                                <span style={{ fontSize: '11px', color: '#6b7280', marginTop: '6px' }}>+250MW</span>
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                <span style={{ fontSize: '13px', fontWeight: '600', marginBottom: '6px' }}>{curtailment100.toFixed(1)}%</span>
+                                <div style={{
+                                  width: '40px',
+                                  height: `${(curtailment100 / maxValue) * 250}px`,
+                                  background: 'linear-gradient(180deg, #10b981, #059669)',
+                                  borderRadius: '4px 4px 0 0',
+                                  minHeight: '30px'
+                                }}></div>
+                                <span style={{ fontSize: '11px', color: '#6b7280', marginTop: '6px' }}>+100MW</span>
                               </div>
                             </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                              <span style={{ fontSize: '12px', width: '80px', color: '#6b7280' }}>+250MW:</span>
-                              <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '28px', overflow: 'hidden' }}>
-                                <div style={{ 
-                                  width: `${Math.min((parseFloat(bus.curtailment_with_250_mw) || 0), 100)}%`, 
-                                  background: 'linear-gradient(90deg, #f59e0b, #d97706)', 
-                                  height: '100%',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  paddingLeft: '10px',
-                                  color: 'white',
-                                  fontSize: '12px',
-                                  fontWeight: '600'
-                                }}>
-                                  {parseFloat(bus.curtailment_with_250_mw || 0).toFixed(1)}%
-                                </div>
-                              </div>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                              <span style={{ fontSize: '12px', width: '80px', color: '#6b7280' }}>+100MW:</span>
-                              <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '4px', height: '28px', overflow: 'hidden' }}>
-                                <div style={{ 
-                                  width: `${Math.min((parseFloat(bus.curtailment_with_100_mw) || 0), 100)}%`, 
-                                  background: 'linear-gradient(90deg, #10b981, #059669)', 
-                                  height: '100%',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  paddingLeft: '10px',
-                                  color: 'white',
-                                  fontSize: '12px',
-                                  fontWeight: '600'
-                                }}>
-                                  {parseFloat(bus.curtailment_with_100_mw || 0).toFixed(1)}%
-                                </div>
-                              </div>
+                            <div style={{ fontSize: '12px', fontWeight: '600', marginTop: '12px', textAlign: 'center', maxWidth: '120px', wordWrap: 'break-word' }}>
+                              {bus.bus_name}
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 </div>

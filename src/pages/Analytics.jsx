@@ -20,30 +20,57 @@ const Analytics = () => {
   
   const persistedState = loadPersistedState();
   
+  // Task 1 & 2: Multi-tab analytics with separate panel states
+  const [activeAnalyticsTab, setActiveAnalyticsTab] = useState(persistedState?.activeAnalyticsTab || 'resource');
   const [activeFuelTab, setActiveFuelTab] = useState(persistedState?.activeFuelTab || 'Wind');
   const [showAddFuelModal, setShowAddFuelModal] = useState(false);
   const [newFuelType, setNewFuelType] = useState('');
   
-  // Dashboard panels configuration with dimensions (2x2 grid layout)
-  const [panels, setPanels] = useState(persistedState?.panels || [
+  // Analytics tabs - removed, now using fuel types for all tabs
+  const analyticsTabs = [];
+  
+  // Default panel layout
+  const defaultPanels = [
     { id: 1, title: 'Panel 1', width: 50, height: 50, row: 0, col: 0, config: null },
     { id: 2, title: 'Panel 2', width: 50, height: 50, row: 0, col: 1, config: null },
     { id: 3, title: 'Panel 3', width: 50, height: 50, row: 1, col: 0, config: null },
     { id: 4, title: 'Panel 4', width: 50, height: 50, row: 1, col: 1, config: null }
-  ]);
+  ];
+  
+  // Separate panel states for each tab (using fuel types as keys)
+  const [panelsByTab, setPanelsByTab] = useState(persistedState?.panelsByTab || {
+    'Wind': persistedState?.panels || [...defaultPanels],
+    'Solar': [...defaultPanels],
+    'Data Center': [...defaultPanels],
+    'Storage': [...defaultPanels],
+    'LMP Analytics': [...defaultPanels],
+    'Bus Score Analytics': [...defaultPanels]
+  });
+  
+  // Current active panels based on selected tab
+  const [panels, setPanels] = useState(panelsByTab[activeFuelTab]);
   
   // Resizable panel state
   const [resizing, setResizing] = useState(null); // { panelId, edge, startX, startY, startWidth, startHeight }
   const [containerRect, setContainerRect] = useState(null);
   
-  // Energy resource types (Task 4: Only Wind, Solar, Data Center, Storage)
+  // Energy resource types (Task 1 & 4: Wind, Solar, Data Center, Storage, LMP Analytics, Bus Score Analytics)
   const [fuelTypes, setFuelTypes] = useState([
-    'Wind', 'Solar', 'Data Center', 'Storage'
+    'Wind', 'Solar', 'Data Center', 'Storage', 'LMP Analytics', 'Bus Score Analytics'
   ]);
   
   // Chart configuration modal
   const [activePanel, setActivePanel] = useState(null);
   const [showConfigModal, setShowConfigModal] = useState(false);
+  
+  // Task 3: Preconfigured graphs dropdown
+  const [showQuickGraphs, setShowQuickGraphs] = useState(false);
+  const [customSavedGraphs, setCustomSavedGraphs] = useState(persistedState?.customSavedGraphs || []);
+  
+  // Task 5: Filter popup
+  const [showFilterPopup, setShowFilterPopup] = useState(false);
+  const [filterValue, setFilterValue] = useState('');
+  const [filteredData, setFilteredData] = useState(null);
   
   // Available chart types (Task 3: More graph types with names displayed below)
   const chartTypes = [
@@ -186,52 +213,243 @@ const Analytics = () => {
     fetchData();
   }, []);
   
-  // Persist state to localStorage whenever panels or activeFuelTab changes
+  // Persist state to localStorage whenever panels, tabs, or custom graphs change
   useEffect(() => {
     const stateToSave = {
-      panels,
-      activeFuelTab
+      panelsByTab,
+      activeFuelTab,
+      activeAnalyticsTab,
+      customSavedGraphs
     };
     localStorage.setItem('analyticsState', JSON.stringify(stateToSave));
     console.log('💾 Saved Analytics state to localStorage');
-  }, [panels, activeFuelTab]);
+  }, [panelsByTab, activeFuelTab, activeAnalyticsTab, customSavedGraphs]);
+  
+  // Sync panels when tab changes
+  useEffect(() => {
+    setPanels(panelsByTab[activeFuelTab]);
+  }, [activeFuelTab, panelsByTab]);
+  
+  // Task 3: Preconfigured Graphs Definitions
+  const preconfiguredGraphs = {
+    solar: [
+      { id: 'S1', name: 'Solar Feasibility Quadrant', chartType: 'scatter', xAxis: 'curtailment_percentage_after_500mw_injection', yAxis: ['5_year_forecast_solarscore'], legend: 'zone', size: 'headroom_capacity_substation_discharging' },
+      { id: 'S2', name: 'Headroom vs Curtailment', chartType: 'scatter', xAxis: 'headroom_capacity_substation_discharging', yAxis: ['curtailment_percentage_after_500mw_injection'], color: '5_year_forecast_solarscore' },
+      { id: 'S3', name: 'Solar Revenue vs Curtailment', chartType: 'scatter', xAxis: '5_year_forecast_solar_capture_lmp', yAxis: ['curtailment_percentage_after_500mw_injection'], legend: 'zone' },
+      { id: 'S4', name: 'Solar Revenue vs Basis', chartType: 'scatter', xAxis: '5_year_forecast_basis_vs_hub_base_case', yAxis: ['5_year_forecast_solar_capture_lmp'] },
+      { id: 'S5', name: 'Curtailment Risk vs Congestion', chartType: 'scatter', xAxis: 'curtailment_percentage_after_500mw_injection', yAxis: ['5_year_forecast_pct_hours_congested'] },
+      { id: 'S6', name: 'SolarScore by Zone', chartType: 'box-plot', xAxis: 'zone', yAxis: ['5_year_forecast_solarscore'] },
+      { id: 'S7', name: 'Curtailment by Zone', chartType: 'box-plot', xAxis: 'zone', yAxis: ['curtailment_percentage_after_500mw_injection'] },
+      { id: 'S8', name: 'Top-25 SolarScore', chartType: 'bar', xAxis: 'bus_name', yAxis: ['5_year_forecast_solarscore'], legend: 'zone', limit: 25 },
+      { id: 'S9', name: 'Headroom Scenarios', chartType: 'bar', xAxis: 'bus_name', yAxis: ['headroom_capacity_substation_discharging', 'headroom_capacity_substation_discharging_1'] },
+      { id: 'S10', name: 'Solar Decision Gate', chartType: 'table', columns: ['bus_name', 'zone', 'state', 'nominal_voltage', '5_year_forecast_solarscore', 'curtailment_percentage_after_500mw_injection', 'headroom_capacity_substation_discharging', '5_year_forecast_basis_vs_hub_base_case', '5_year_forecast_solar_capture_lmp'] }
+    ],
+    wind: [
+      { id: 'W1', name: 'Wind Feasibility Quadrant', chartType: 'scatter', xAxis: 'curtailment_percentage_after_500mw_injection', yAxis: ['5_year_forecast_wind_capture_lmp'], legend: 'zone', size: 'headroom_capacity_substation_discharging' },
+      { id: 'W2', name: 'Wind Revenue vs Curtailment', chartType: 'scatter', xAxis: '5_year_forecast_wind_capture_lmp', yAxis: ['curtailment_percentage_after_500mw_injection'] },
+      { id: 'W3', name: 'Wind Revenue vs Basis', chartType: 'scatter', xAxis: '5_year_forecast_basis_vs_hub_base_case', yAxis: ['5_year_forecast_wind_capture_lmp'] },
+      { id: 'W4', name: 'Curtailment Risk vs Congestion', chartType: 'scatter', xAxis: 'curtailment_percentage_after_500mw_injection', yAxis: ['5_year_forecast_pct_hours_congested'], size: 'existing_gen_mw' },
+      { id: 'W5', name: 'WindScore by Zone', chartType: 'box-plot', xAxis: 'zone', yAxis: ['5_year_forecast_wind_capture_lmp'] },
+      { id: 'W6', name: 'Curtailment by Zone', chartType: 'box-plot', xAxis: 'zone', yAxis: ['curtailment_percentage_after_500mw_injection'] },
+      { id: 'W7', name: 'Top-25 WindScore', chartType: 'bar', xAxis: 'bus_name', yAxis: ['5_year_forecast_wind_capture_lmp'], legend: 'zone', limit: 25 },
+      { id: 'W8', name: 'Headroom Scenarios', chartType: 'bar', xAxis: 'bus_name', yAxis: ['headroom_capacity_substation_discharging', 'headroom_capacity_substation_discharging_1'] },
+      { id: 'W9', name: 'Wind Decision Gate', chartType: 'table', columns: ['bus_name', 'zone', '5_year_forecast_wind_capture_lmp', 'curtailment_percentage_after_500mw_injection', '5_year_forecast_pct_hours_congested', '5_year_forecast_basis_vs_hub_base_case', 'existing_gen_mw'] }
+    ],
+    storage: [
+      { id: 'ST1', name: 'Arbitrage Spread vs Negative Hours', chartType: 'scatter', xAxis: '5_year_forecast_tb4_avg', yAxis: ['5_year_forecast_hours_lmp_lt_0'], color: '5_year_forecast_storagescore' },
+      { id: 'ST2', name: 'On-peak vs Off-peak LMP', chartType: 'scatter', xAxis: '5_year_forecast_avg_lmp_lowest_5pct', yAxis: ['5_year_forecast_avg_lmp_base_case'], size: '5_year_forecast_tb4_avg' },
+      { id: 'ST3', name: 'Volatility vs Negative-price', chartType: 'scatter', xAxis: '5_year_forecast_lmp_stddev', yAxis: ['5_year_forecast_pct_hours_lt_0'] },
+      { id: 'ST4', name: 'Negative-price vs Congestion', chartType: 'scatter', xAxis: '5_year_forecast_pct_hours_lt_0', yAxis: ['5_year_forecast_pct_hours_congested'] },
+      { id: 'ST5', name: 'StorageScore vs Arbitrage', chartType: 'scatter', xAxis: '5_year_forecast_tb4_avg', yAxis: ['5_year_forecast_storagescore'] },
+      { id: 'ST6', name: 'StorageScore vs Curtailment', chartType: 'scatter', xAxis: 'curtailment_percentage_after_500mw_injection', yAxis: ['5_year_forecast_storagescore'], size: 'headroom_capacity_substation_discharging' },
+      { id: 'ST7', name: 'Basis vs StorageScore', chartType: 'scatter', xAxis: '5_year_forecast_basis_vs_hub_base_case', yAxis: ['5_year_forecast_storagescore'] },
+      { id: 'ST8', name: 'Headroom vs Congestion', chartType: 'scatter', xAxis: 'headroom_capacity_substation_discharging', yAxis: ['5_year_forecast_pct_hours_congested'] },
+      { id: 'ST9', name: 'Arbitrage by Zone', chartType: 'box-plot', xAxis: 'zone', yAxis: ['5_year_forecast_tb4_avg'] },
+      { id: 'ST10', name: 'Top-25 StorageScore', chartType: 'bar', xAxis: 'bus_name', yAxis: ['5_year_forecast_storagescore'], limit: 25 },
+      { id: 'ST11', name: 'Storage Decision Gate', chartType: 'table', columns: ['bus_name', 'zone', '5_year_forecast_storagescore', '5_year_forecast_tb4_avg', '5_year_forecast_hours_lmp_lt_0', 'headroom_capacity_substation_discharging', '5_year_forecast_lmp_stddev', '5_year_forecast_pct_hours_lt_0', '5_year_forecast_pct_hours_congested'] }
+    ],
+    datacenter: [
+      { id: 'DC1', name: 'Price Stability vs Headroom', chartType: 'scatter', xAxis: '5_year_forecast_lmp_stddev', yAxis: ['headroom_capacity_substation_discharging_1'], color: '5_year_forecast_loadscore' },
+      { id: 'DC2', name: 'DataCenterScore vs Basis', chartType: 'scatter', xAxis: '5_year_forecast_basis_vs_hub_base_case', yAxis: ['5_year_forecast_loadscore'] },
+      { id: 'DC3', name: 'DataCenterScore vs Queue MW', chartType: 'scatter', xAxis: 'existing_gen_mw', yAxis: ['5_year_forecast_loadscore'] },
+      { id: 'DC4', name: 'Queue Competitiveness', chartType: 'scatter', xAxis: 'existing_gen_capacity_mw', yAxis: ['5_year_forecast_loadscore'] },
+      { id: 'DC5', name: 'Congestion vs DataCenterScore', chartType: 'scatter', xAxis: '5_year_forecast_pct_hours_congested', yAxis: ['5_year_forecast_loadscore'], size: 'existing_gen_mw' },
+      { id: 'DC6', name: 'Expansion Readiness', chartType: 'scatter', xAxis: 'headroom_capacity_substation_discharging', yAxis: ['existing_gen_mw'] },
+      { id: 'DC7', name: 'Avg DataCenterScore by Zone', chartType: 'bar', xAxis: 'zone', yAxis: ['5_year_forecast_loadscore'], aggregation: 'mean' },
+      { id: 'DC8', name: 'Top-25 DataCenterScore', chartType: 'bar', xAxis: 'bus_name', yAxis: ['5_year_forecast_loadscore'], limit: 25 },
+      { id: 'DC9', name: 'Data Center Readiness Gate', chartType: 'table', columns: ['bus_name', 'zone', '5_year_forecast_loadscore', '5_year_forecast_lmp_stddev', 'headroom_capacity_substation_discharging_1', 'headroom_capacity_substation_discharging', '5_year_forecast_basis_vs_hub_base_case', 'existing_gen_mw'] }
+    ]
+  };
+  
+  const lmpGraphs = [
+    { id: 'LMP1', name: 'Avg LMP vs Basis', chartType: 'scatter', xAxis: '5_year_forecast_avg_lmp_base_case', yAxis: ['5_year_forecast_basis_vs_hub_base_case'] },
+    { id: 'LMP2', name: 'Volatility vs Avg LMP', chartType: 'scatter', xAxis: '5_year_forecast_avg_lmp_base_case', yAxis: ['5_year_forecast_lmp_stddev'] },
+    { id: 'LMP3', name: 'Negative-price vs Avg LMP', chartType: 'scatter', xAxis: '5_year_forecast_avg_lmp_base_case', yAxis: ['5_year_forecast_pct_hours_lt_0'] },
+    { id: 'LMP4', name: 'Hours LMP<0 vs Avg LMP', chartType: 'scatter', xAxis: '5_year_forecast_avg_lmp_base_case', yAxis: ['5_year_forecast_hours_lmp_lt_0'] },
+    { id: 'LMP5', name: 'Congestion vs Basis', chartType: 'scatter', xAxis: '5_year_forecast_pct_hours_congested', yAxis: ['5_year_forecast_basis_vs_hub_base_case'], size: 'curtailment_percentage_after_500mw_injection' },
+    { id: 'LMP6', name: 'On-peak vs Off-peak', chartType: 'scatter', xAxis: '5_year_forecast_avg_lmp_lowest_5pct', yAxis: ['5_year_forecast_avg_lmp_base_case'], size: '5_year_forecast_lmp_stddev' },
+    { id: 'LMP7', name: 'Avg LMP by Zone', chartType: 'bar', xAxis: 'zone', yAxis: ['5_year_forecast_avg_lmp_base_case'], aggregation: 'mean' },
+    { id: 'LMP8', name: 'Basis Distribution by Zone', chartType: 'box-plot', xAxis: 'zone', yAxis: ['5_year_forecast_basis_vs_hub_base_case'] },
+    { id: 'LMP9', name: 'Merchant Risk Envelope', chartType: 'scatter', xAxis: '5_year_forecast_avg_lmp_base_case', yAxis: ['5_year_forecast_lmp_stddev'], size: '5_year_forecast_basis_vs_hub_base_case', legend: 'zone' }
+  ];
+  
+  const busScoreGraphs = [
+    { id: 'BS1', name: 'Tech Score Comparison', chartType: 'bar', xAxis: 'bus_name', yAxis: ['5_year_forecast_solarscore', '5_year_forecast_wind_capture_lmp', '5_year_forecast_storagescore', '5_year_forecast_loadscore'] },
+    { id: 'BS2', name: 'HybridScore vs SolarScore', chartType: 'scatter', xAxis: '5_year_forecast_solarscore', yAxis: ['5_year_forecast_storagescore'] },
+    { id: 'BS3', name: 'HybridScore vs StorageScore', chartType: 'scatter', xAxis: '5_year_forecast_storagescore', yAxis: ['5_year_forecast_solarscore'] },
+    { id: 'BS4', name: 'Score vs Headroom Robustness', chartType: 'scatter', xAxis: 'headroom_capacity_substation_discharging_1', yAxis: ['5_year_forecast_solarscore'] },
+    { id: 'BS5', name: 'Score vs Curtailment', chartType: 'scatter', xAxis: 'curtailment_percentage_after_500mw_injection', yAxis: ['5_year_forecast_solarscore'] },
+    { id: 'BS6', name: 'Score vs Basis', chartType: 'scatter', xAxis: '5_year_forecast_basis_vs_hub_base_case', yAxis: ['5_year_forecast_solarscore'] },
+    { id: 'BS7', name: 'Score vs Upgradeability', chartType: 'scatter', xAxis: 'headroom_capacity_substation_charging_1', yAxis: ['5_year_forecast_solarscore'] },
+    { id: 'BS8', name: 'Composite Score Ranking', chartType: 'bar', xAxis: 'bus_name', yAxis: ['5_year_forecast_solarscore'], limit: 25 },
+    { id: 'BS9', name: 'Go/No-Go Matrix', chartType: 'table', columns: ['bus_name', 'zone', '5_year_forecast_solarscore', '5_year_forecast_wind_capture_lmp', '5_year_forecast_storagescore', '5_year_forecast_loadscore'] }
+  ];
+  
+  // Get available quick graphs based on current tab
+  const getQuickGraphs = () => {
+    if (activeFuelTab === 'LMP Analytics') return lmpGraphs;
+    if (activeFuelTab === 'Bus Score Analytics') return busScoreGraphs;
+    
+    // Resource analytics - check fuel type
+    const fuelMap = {
+      'Solar': preconfiguredGraphs.solar,
+      'Wind': preconfiguredGraphs.wind,
+      'Storage': preconfiguredGraphs.storage,
+      'Data Center': preconfiguredGraphs.datacenter
+    };
+    return fuelMap[activeFuelTab] || [];
+  };
   
   // Get real data from database based on configuration
   const getRealData = (config) => {
-    console.log('getRealData called with config:', config);
-    console.log('Database data buses:', databaseData?.buses?.length);
-    
     if (!config || !config.xAxis || config.primaryYAxis.length === 0) {
-      console.log('Config validation failed');
       return [];
     }
     
     if (!databaseData || !databaseData.buses || !Array.isArray(databaseData.buses) || databaseData.buses.length === 0) {
-      console.log('No buses data available or not an array');
       return [];
     }
     
     // Use buses data as the primary source from gridsense_iso_ne.db
     const sourceData = databaseData.buses;
     
-    // Map field IDs to actual API column names
+    // Map field IDs to actual database column names
     const fieldMapping = {
-      'historical_average_lmp_2022': 'lmp_2022',
-      'historical_average_lmp_2023': 'lmp_2023',
-      'historical_average_lmp_2024': 'lmp_2024',
-      'historical_average_lmp_2025': 'lmp_2025',
-      'nominal_voltage': 'base_kv'
+      // Simplified names to actual database columns
+      'curt_pct_500': 'curtailment_percentage_after_500mw_injection',
+      'solar_score': '5_year_forecast_solarscore',
+      'wind_score': '5_year_forecast_wind_capture_lmp',
+      'storage_score': '5_year_forecast_storagescore',
+      'data_center_score': '5_year_forecast_loadscore',
+      'headroom_bau': 'headroom_capacity_substation_discharging',
+      'headroom_stressed': 'headroom_capacity_substation_discharging_1',
+      'headroom_charging': 'headroom_capacity_substation_charging',
+      'headroom_charging_1': 'headroom_capacity_substation_charging_1',
+      'headroom_robust': 'headroom_capacity_substation_discharging_1',
+      'basis_vs_hub_5yr': '5_year_forecast_basis_vs_hub_base_case',
+      'solar_revenue_proxy': '5_year_forecast_solar_capture_lmp',
+      'wind_revenue_proxy': '5_year_forecast_wind_capture_lmp',
+      'curt_risk_index': 'curtailment_percentage_after_500mw_injection',
+      'pct_hours_congested': '5_year_forecast_pct_hours_congested',
+      'substation_name': 'bus_name',
+      'voltage_kV': 'nominal_voltage',
+      'avg_lmp_5yr': '5_year_forecast_avg_lmp_base_case',
+      'lmp_stddev': '5_year_forecast_lmp_stddev',
+      'hours_lmp_lt_0': '5_year_forecast_hours_lmp_lt_0',
+      'neg_price_opportunity': '5_year_forecast_pct_hours_lt_0',
+      'arbitrage_spread': '5_year_forecast_tb4_avg',
+      'avg_lmp_offpeak': '5_year_forecast_avg_lmp_lowest_5pct',
+      'avg_lmp_onpeak': '5_year_forecast_avg_lmp_base_case',
+      'queue_mw_radius': 'existing_gen_mw',
+      'queue_competitiveness_score': 'existing_gen_capacity_mw',
+      'upgradeability_score': 'headroom_capacity_substation_charging_1',
+      'hybrid_score': '5_year_forecast_storagescore',
+      'composite_score': '5_year_forecast_solarscore'
     };
     
-    const getFieldValue = (row, fieldId) => {
+    // Direct property access with type conversion (used for all chart types)
+    const getValue = (row, fieldId) => {
       const mappedId = fieldMapping[fieldId] || fieldId;
-      return row[mappedId];
+      let value = row[mappedId];
+      // Convert string numbers to actual numbers
+      if (typeof value === 'string' && !isNaN(parseFloat(value))) {
+        value = parseFloat(value);
+      }
+      return value;
     };
     
-    // Group data by x-axis field
+    // For scatter plots and table charts, return raw data without aggregation
+    if (config.chartType === 'scatter' || config.chartType === 'table') {
+      // Direct property access with type conversion
+      const getValue = (row, fieldId) => {
+        const mappedId = fieldMapping[fieldId] || fieldId;
+        let value = row[mappedId];
+        // Convert string numbers to actual numbers
+        if (typeof value === 'string' && !isNaN(parseFloat(value))) {
+          value = parseFloat(value);
+        }
+        return value;
+      };
+      
+      const rawData = sourceData.map((row, index) => {
+        const dataPoint = {}; 
+        // Add x-axis field - if NULL, use bus_name or index as fallback
+        let xVal = getValue(row, config.xAxis.id);
+        if (xVal === null || xVal === undefined || xVal === '') {
+          // Fallback to bus_name if x-axis is NULL
+          xVal = row.bus_name || `Bus ${index + 1}`;
+        }
+        dataPoint[config.xAxis.id] = xVal;
+        
+        // Add all y-axis fields
+        config.primaryYAxis.forEach(field => {
+          dataPoint[field.id] = getValue(row, field.id);
+        });
+        // Add any additional fields that might be used for color, size, etc.
+        if (config.legend) {
+          dataPoint[config.legend] = getValue(row, config.legend);
+        }
+        if (config.color) {
+          dataPoint[config.color] = getValue(row, config.color);
+        }
+        if (config.size) {
+          dataPoint[config.size] = getValue(row, config.size);
+        }
+        // Add category for display (use x-axis value or bus_name)
+        dataPoint.category = row.bus_name || xVal || 'Unknown';
+        return dataPoint;
+      });
+      
+      // RELAXED FILTER - only require at least ONE y-axis to have a valid numeric value
+      // X-axis is always populated (fallback to bus_name), so we only check Y values
+      const filteredData = rawData.filter(row => {
+        // At least ONE y-axis field must have a valid numeric value
+        const hasValidY = config.primaryYAxis.some(f => {
+          const yValue = row[f.id];
+          return typeof yValue === 'number' && !isNaN(yValue) && yValue !== null;
+        });
+        
+        return hasValidY;
+      });
+      
+      // Only log if we have issues
+      if (filteredData.length === 0) {
+        console.warn('⚠️ No data available for chart:', {
+          chartType: config.chartType,
+          xAxis: config.xAxis.id,
+          yAxis: config.primaryYAxis.map(f => f.id),
+          mappedXAxis: fieldMapping[config.xAxis.id] || config.xAxis.id,
+          totalRows: sourceData.length
+        });
+      }
+      
+      return filteredData;
+    }
+    
+    // For other chart types (bar, line, pie, area), aggregate data by x-axis
     const groupedData = {};
     sourceData.forEach(row => {
-      const xValue = getFieldValue(row, config.xAxis.id) || 'Unknown';
+      const xValue = getValue(row, config.xAxis.id) || 'Unknown';
       if (!groupedData[xValue]) {
         groupedData[xValue] = [];
       }
@@ -245,7 +463,7 @@ const Analytics = () => {
       // Calculate primary Y-axis values
       config.primaryYAxis.forEach(field => {
         const values = groupedData[xValue]
-          .map(row => parseFloat(getFieldValue(row, field.id)) || 0)
+          .map(row => parseFloat(getValue(row, field.id)) || 0)
           .filter(v => !isNaN(v));
         
         if (values.length > 0) {
@@ -296,10 +514,7 @@ const Analytics = () => {
   
   // Render chart based on configuration
   const renderChart = (panel) => {
-    console.log('renderChart called for panel:', panel.id, 'config:', panel.config);
-    
     if (!panel.config || !panel.config.chartType || !panel.config.xAxis || panel.config.primaryYAxis.length === 0) {
-      console.log('Panel missing config');
       return (
         <div className="panel-placeholder">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="2">
@@ -312,10 +527,9 @@ const Analytics = () => {
     }
     
     const config = panel.config;
-    const data = getRealData(config);
+    // Task 1: Use filtered data if available, otherwise fetch from database
+    const data = config._filteredData || getRealData(config);
     const chartType = config.chartType;
-    
-    console.log('Chart type:', chartType, 'Data length:', data.length);
     
     if (loading) {
       return (
@@ -328,7 +542,7 @@ const Analytics = () => {
       );
     }
     
-    if (data.length === 0) {
+    if (!data || data.length === 0) {
       return (
         <div className="panel-placeholder">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="2">
@@ -336,6 +550,9 @@ const Analytics = () => {
             <line x1="5" y1="12" x2="19" y2="12"/>
           </svg>
           <p>No data available</p>
+          <small style={{ fontSize: '11px', color: '#94a3b8', marginTop: '8px' }}>
+            Check field mappings
+          </small>
         </div>
       );
     }
@@ -360,8 +577,11 @@ const Analytics = () => {
       const barWidth = chartWidth / (data.length * config.primaryYAxis.length + data.length + 1);
       const padding = { top: 20, right: 40, bottom: 40, left: 50 };
       
+      // Check if we have filtered data for comparison/highlighting
+      const hasFilter = config._highlightValue;
+      
       return (
-        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`}>
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`} preserveAspectRatio="xMidYMid meet">
           {/* Grid lines */}
           {config.showGridLines && [0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
             <g key={i}>
@@ -386,51 +606,61 @@ const Analytics = () => {
           ))}
           
           {/* Bars */}
-          {data.map((d, i) => (
-            <g key={i}>
-              {config.primaryYAxis.map((field, j) => {
-                const value = d[field.id] || 0;
-                const barHeight = (value / maxValue) * chartHeight;
-                const x = padding.left + (i * (config.primaryYAxis.length * barWidth + barWidth)) + (j * barWidth) + barWidth / 2;
-                const y = padding.top + chartHeight - barHeight;
-                
-                return (
-                  <g key={field.id}>
-                    <rect
-                      x={x}
-                      y={y}
-                      width={barWidth * 0.8}
-                      height={barHeight}
-                      fill={colorPalette[j % colorPalette.length]}
-                      rx="2"
-                    />
-                    {config.showDataLabels && (
-                      <text
-                        x={x + barWidth * 0.4}
-                        y={y - 5}
-                        textAnchor="middle"
-                        fontSize="9"
-                        fill="#374151"
-                        fontWeight="500"
-                      >
-                        {value}
-                      </text>
-                    )}
-                  </g>
-                );
-              })}
-              {/* X-axis labels */}
-              <text
-                x={padding.left + (i * (config.primaryYAxis.length * barWidth + barWidth)) + (config.primaryYAxis.length * barWidth) / 2}
-                y={padding.top + chartHeight + 20}
-                textAnchor="middle"
-                fontSize="11"
-                fill="#374151"
-              >
-                {d.category}
-              </text>
-            </g>
-          ))}
+          {data.map((d, i) => {
+            // Check if this bar matches the filter
+            const isHighlighted = hasFilter && Object.values(d).some(val => 
+              String(val).toLowerCase().includes(config._highlightValue.toLowerCase())
+            );
+            
+            return (
+              <g key={i}>
+                {config.primaryYAxis.map((field, j) => {
+                  const value = d[field.id] || 0;
+                  const barHeight = (value / maxValue) * chartHeight;
+                  const x = padding.left + (i * (config.primaryYAxis.length * barWidth + barWidth)) + (j * barWidth) + barWidth / 2;
+                  const y = padding.top + chartHeight - barHeight;
+                  
+                  return (
+                    <g key={field.id}>
+                      <rect
+                        x={x}
+                        y={y}
+                        width={barWidth * 0.8}
+                        height={barHeight}
+                        fill={isHighlighted ? "#ef4444" : colorPalette[j % colorPalette.length]}
+                        rx="2"
+                        opacity={isHighlighted ? "1" : hasFilter ? "0.4" : "1"}
+                        stroke={isHighlighted ? "#fca5a5" : "none"}
+                        strokeWidth={isHighlighted ? "2" : "0"}
+                      />
+                      {config.showDataLabels && (
+                        <text
+                          x={x + barWidth * 0.4}
+                          y={y - 5}
+                          textAnchor="middle"
+                          fontSize="9"
+                          fill={isHighlighted ? "#dc2626" : "#374151"}
+                          fontWeight={isHighlighted ? "700" : "500"}
+                        >
+                          {value}
+                        </text>
+                      )}
+                    </g>
+                  );
+                })}
+                <text
+                  x={padding.left + (i * (config.primaryYAxis.length * barWidth + barWidth)) + (config.primaryYAxis.length * barWidth) / 2}
+                  y={padding.top + chartHeight + 20}
+                  textAnchor="middle"
+                  fontSize="11"
+                  fill={isHighlighted ? "#dc2626" : "#374151"}
+                  fontWeight={isHighlighted ? "700" : "400"}
+                >
+                  {d.category}
+                </text>
+              </g>
+            );
+          })}
           
           {/* Axis labels */}
           <text x={padding.left + chartWidth / 2} y={padding.top + chartHeight + 35} textAnchor="middle" fontSize="12" fill="#1f2937" fontWeight="600">
@@ -454,7 +684,7 @@ const Analytics = () => {
       const pointSpacing = chartWidth / (data.length - 1);
       
       return (
-        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`}>
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`} preserveAspectRatio="xMidYMid meet">
           {/* Grid lines */}
           {config.showGridLines && [0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
             <g key={i}>
@@ -563,7 +793,7 @@ const Analytics = () => {
       let currentAngle = -90;
       
       return (
-        <svg width="100%" height="100%" viewBox="0 0 500 280">
+        <svg width="100%" height="100%" viewBox="0 0 500 280" preserveAspectRatio="xMidYMid meet">
           {data.map((d, i) => {
             const value = d[config.primaryYAxis[0].id] || 0;
             const percentage = value / total;
@@ -636,7 +866,7 @@ const Analytics = () => {
       const pointSpacing = chartWidth / (data.length - 1);
       
       return (
-        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`}>
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`} preserveAspectRatio="xMidYMid meet">
           <defs>
             {config.primaryYAxis.map((field, j) => (
               <linearGradient key={field.id} id={`gradient-${j}`} x1="0" x2="0" y1="0" y2="1">
@@ -729,7 +959,7 @@ const Analytics = () => {
       const lineFields = [...config.primaryYAxis.slice(Math.ceil(config.primaryYAxis.length / 2)), ...(config.secondaryYAxis || [])];
       
       return (
-        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`}>
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`} preserveAspectRatio="xMidYMid meet">
           <defs>
             {areaFields.map((field, j) => (
               <linearGradient key={field.id} id={`gradient-${panel.id}-${j}`} x1="0" x2="0" y1="0" y2="1">
@@ -853,7 +1083,7 @@ const Analytics = () => {
       const pointSpacing = chartWidth / (data.length - 1);
       
       return (
-        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`}>
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`} preserveAspectRatio="xMidYMid meet">
           {/* Grid lines */}
           {config.showGridLines && [0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
             <g key={i}>
@@ -931,7 +1161,7 @@ const Analytics = () => {
       const lineFields = [...config.primaryYAxis.slice(Math.ceil(config.primaryYAxis.length / 2)), ...(config.secondaryYAxis || [])];
       
       return (
-        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`}>
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`} preserveAspectRatio="xMidYMid meet">
           {/* Grid lines */}
           {config.showGridLines && [0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
             <g key={i}>
@@ -1048,7 +1278,7 @@ const Analytics = () => {
       const areaFields = [...config.primaryYAxis.slice(Math.ceil(config.primaryYAxis.length / 2)), ...(config.secondaryYAxis || [])];
       
       return (
-        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`}>
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`} preserveAspectRatio="xMidYMid meet">
           <defs>
             {areaFields.map((field, j) => (
               <linearGradient key={field.id} id={`gradient-la-${panel.id}-${j}`} x1="0" x2="0" y1="0" y2="1">
@@ -1177,7 +1407,7 @@ const Analytics = () => {
       const scatterFields = [...config.primaryYAxis.slice(Math.ceil(config.primaryYAxis.length / 2)), ...(config.secondaryYAxis || [])];
       
       return (
-        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`}>
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`} preserveAspectRatio="xMidYMid meet">
           {/* Grid lines */}
           {config.showGridLines && [0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
             <g key={i}>
@@ -1280,7 +1510,7 @@ const Analytics = () => {
       ));
       
       return (
-        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`}>
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`} preserveAspectRatio="xMidYMid meet">
           {/* Grid lines */}
           {config.showGridLines && [0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
             <g key={i}>
@@ -1362,7 +1592,7 @@ const Analytics = () => {
       ));
       
       return (
-        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`}>
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`} preserveAspectRatio="xMidYMid meet">
           <defs>
             {config.primaryYAxis.map((field, j) => (
               <linearGradient key={field.id} id={`gradient-sa-${panel.id}-${j}`} x1="0" x2="0" y1="0" y2="1">
@@ -1469,7 +1699,7 @@ const Analytics = () => {
       const maxValue = Math.max(maxStackedValue, maxLineValue);
       
       return (
-        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`}>
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`} preserveAspectRatio="xMidYMid meet">
           {/* Grid lines */}
           {config.showGridLines && [0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
             <g key={i}>
@@ -1585,7 +1815,7 @@ const Analytics = () => {
       const barHeight = (chartHeight / data.length) * 0.7;
       
       return (
-        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`}>
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`} preserveAspectRatio="xMidYMid meet">
           {/* Grid lines */}
           {config.showGridLines && [0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
             <line 
@@ -1674,7 +1904,7 @@ const Analytics = () => {
       };
       
       return (
-        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`}>
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`} preserveAspectRatio="xMidYMid meet">
           {/* Heatmap cells */}
           {config.primaryYAxis.map((field, rowIndex) => (
             <g key={field.id}>
@@ -1757,6 +1987,185 @@ const Analytics = () => {
             })}
             <text x="0" y={chartHeight + 15} fontSize="10" fill="#6b7280">Min: {Math.round(minValue)}</text>
           </g>
+        </svg>
+      );
+    }
+    
+    // Task 3: Table Chart
+    if (chartType === 'table') {
+      // Limit data for better performance
+      const displayData = data.slice(0, 100);
+      
+      return (
+        <div className="table-chart-container">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>{config.xAxis.name}</th>
+                {config.primaryYAxis.map(field => (
+                  <th key={field.id}>{field.name}</th>
+                ))}
+                {config.legend && <th>{config.legend.name}</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {displayData.map((row, i) => (
+                <tr key={i}>
+                  <td>{row.category || row[config.xAxis.id]}</td>
+                  {config.primaryYAxis.map(field => (
+                    <td key={field.id}>
+                      {typeof row[field.id] === 'number' 
+                        ? row[field.id].toFixed(2) 
+                        : row[field.id] || '-'}
+                    </td>
+                  ))}
+                  {config.legend && (
+                    <td>{row[config.legend.id] || '-'}</td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {data.length > 100 && (
+            <div className="table-footer">
+              Showing 100 of {data.length} rows
+            </div>
+          )}
+        </div>
+      );
+    }
+    
+    // Scatter Chart
+    if (chartType === 'scatter') {
+      const xValues = data.map(d => parseFloat(d[config.xAxis.id]) || 0);
+      const yValues = data.flatMap(d => 
+        config.primaryYAxis.map(f => parseFloat(d[f.id]) || 0)
+      );
+      
+      const minX = Math.min(...xValues);
+      const maxX = Math.max(...xValues);
+      const minY = Math.min(...yValues);
+      const maxY = Math.max(...yValues);
+      
+      console.log('Scatter plot data:', { 
+        dataPoints: data.length, 
+        xRange: [minX, maxX], 
+        yRange: [minY, maxY],
+        samplePoint: data[0]
+      });
+      
+      // Handle edge case where all values are the same
+      const xRange = maxX - minX || 1;
+      const yRange = maxY - minY || 1;
+      
+      const chartHeight = 200;
+      const chartWidth = 450;
+      const padding = { top: 20, right: 40, bottom: 50, left: 60 };
+      
+      // Check if we have filtered data for comparison/highlighting
+      const hasFilter = config._highlightValue && config._originalData;
+      const originalData = config._originalData || data;
+      
+      return (
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`} preserveAspectRatio="xMidYMid meet">
+          {/* Grid lines */}
+          {config.showGridLines && [0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
+            <g key={i}>
+              <line 
+                x1={padding.left} 
+                y1={padding.top + chartHeight * ratio}
+                x2={padding.left + chartWidth} 
+                y2={padding.top + chartHeight * ratio}
+                stroke="#e5e7eb" 
+                strokeWidth="1"
+              />
+              <line 
+                x1={padding.left + chartWidth * ratio} 
+                y1={padding.top}
+                x2={padding.left + chartWidth * ratio} 
+                y2={padding.top + chartHeight}
+                stroke="#e5e7eb" 
+                strokeWidth="1"
+              />
+              {/* Y-axis value labels */}
+              <text 
+                x={padding.left - 10} 
+                y={padding.top + chartHeight * ratio + 4}
+                textAnchor="end"
+                fontSize="10"
+                fill="#6b7280"
+              >
+                {(minY + (maxY - minY) * (1 - ratio)).toFixed(1)}
+              </text>
+              {/* X-axis value labels */}
+              <text 
+                x={padding.left + chartWidth * ratio} 
+                y={padding.top + chartHeight + 20}
+                textAnchor="middle"
+                fontSize="10"
+                fill="#6b7280"
+              >
+                {(minX + (maxX - minX) * ratio).toFixed(1)}
+              </text>
+            </g>
+          ))}\n          {/* Render original data points (dimmed if filter active) */}
+          {hasFilter && originalData.map((d, i) => {
+            const xVal = parseFloat(d[config.xAxis.id]) || 0;
+            const x = padding.left + ((xVal - minX) / xRange) * chartWidth;
+            
+            return config.primaryYAxis.map((field, j) => {
+              const yVal = parseFloat(d[field.id]) || 0;
+              const y = padding.top + chartHeight - ((yVal - minY) / yRange) * chartHeight;
+              
+              return (
+                <circle
+                  key={`orig-${i}-${field.id}`}
+                  cx={x}
+                  cy={y}
+                  r="3"
+                  fill="#cbd5e1"
+                  opacity="0.3"
+                  stroke="none"
+                />
+              );
+            });
+          })}\n          
+          {/* Data points (highlighted if filter matches) */}
+          {data.map((d, i) => {
+            const xVal = parseFloat(d[config.xAxis.id]) || 0;
+            const x = padding.left + ((xVal - minX) / xRange) * chartWidth;
+            
+            // Check if this point matches the filter
+            const isHighlighted = hasFilter && Object.values(d).some(val => 
+              String(val).toLowerCase().includes(config._highlightValue.toLowerCase())
+            );
+            
+            return config.primaryYAxis.map((field, j) => {
+              const yVal = parseFloat(d[field.id]) || 0;
+              const y = padding.top + chartHeight - ((yVal - minY) / yRange) * chartHeight;
+              
+              return (
+                <circle
+                  key={`${i}-${field.id}`}
+                  cx={x}
+                  cy={y}
+                  r={isHighlighted ? "6" : "4"}
+                  fill={isHighlighted ? "#ef4444" : colorPalette[j % colorPalette.length]}
+                  opacity={isHighlighted ? "1" : "0.7"}
+                  stroke={isHighlighted ? "#fca5a5" : "white"}
+                  strokeWidth={isHighlighted ? "2.5" : "1.5"}
+                />
+              );
+            });
+          })}
+          
+          {/* Axis labels */}
+          <text x={padding.left + chartWidth / 2} y={padding.top + chartHeight + 35} textAnchor="middle" fontSize="12" fill="#1f2937" fontWeight="600">
+            {config.xAxis.name}
+          </text>
+          <text x={20} y={padding.top + chartHeight / 2} textAnchor="middle" fontSize="12" fill="#1f2937" fontWeight="600" transform={`rotate(-90 20 ${padding.top + chartHeight / 2})`}>
+            {config.primaryYAxis[0].name}
+          </text>
         </svg>
       );
     }
@@ -2078,15 +2487,238 @@ const Analytics = () => {
     
     console.log('Saving panel config:', panelConfig);
     
-    setPanels(panels.map(panel => 
+    const updatedPanels = panels.map(panel => 
       panel.id === activePanel 
         ? { ...panel, config: { ...panelConfig }, title }
         : panel
-    ));
+    );
+    
+    setPanels(updatedPanels);
+    // Update the specific tab's panels
+    setPanelsByTab(prev => ({
+      ...prev,
+      [activeFuelTab]: updatedPanels
+    }));
     
     console.log('Panel configuration saved');
     setShowConfigModal(false);
     setActivePanel(null);
+  };
+  
+  // Task 4: Save custom graph to quick graphs list
+  const saveCustomGraph = () => {
+    if (!panelConfig.chartType || !panelConfig.xAxis || panelConfig.primaryYAxis.length === 0) {
+      alert('Please configure the graph completely before saving');
+      return;
+    }
+    
+    const graphName = prompt('Enter a name for this graph:');
+    if (!graphName) return;
+    
+    const customGraph = {
+      id: `CUSTOM_${Date.now()}`,
+      name: graphName,
+      chartType: panelConfig.chartType,
+      xAxis: panelConfig.xAxis.id,
+      yAxis: panelConfig.primaryYAxis.map(f => f.id),
+      legend: panelConfig.legend?.id,
+      config: { ...panelConfig },
+      tab: activeFuelTab,
+      fuelType: activeFuelTab
+    };
+    
+    setCustomSavedGraphs(prev => [...prev, customGraph]);
+    alert(`Graph "${graphName}" saved successfully!`);
+  };
+  
+  // Task 2 & 3: Apply quick graph to current panel - populate fields automatically
+  const applyQuickGraph = (quickGraph) => {
+    console.log('🎯 Applying quick graph:', quickGraph);
+    console.log('📊 Available fields:', availableFields);
+    
+    // Helper function to find field by multiple criteria
+    const findField = (fieldId, fieldsList) => {
+      if (!fieldId || !fieldsList) return null;
+      
+      // Try exact ID match
+      let field = fieldsList.find(f => f.id === fieldId);
+      if (field) return field;
+      
+      // Try name match (case insensitive)
+      field = fieldsList.find(f => f.name && f.name.toLowerCase() === fieldId.toLowerCase());
+      if (field) return field;
+      
+      // Try partial match in name or id
+      field = fieldsList.find(f => 
+        (f.id && f.id.toLowerCase().includes(fieldId.toLowerCase())) ||
+        (f.name && f.name.toLowerCase().includes(fieldId.toLowerCase()))
+      );
+      if (field) return field;
+      
+      return null;
+    };
+    
+    // Helper to create a dynamic field if not found
+    const createDynamicField = (fieldId, isMeasure = false) => {
+      console.log(`⚠️ Creating dynamic field for: ${fieldId}`);
+      return {
+        id: fieldId,
+        name: fieldId.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+        table: 'buses',
+        type: isMeasure ? 'numeric' : 'categorical',
+        aggregation: isMeasure ? ['avg', 'sum', 'min', 'max', 'count'] : undefined
+      };
+    };
+    
+    // Find or create X-Axis field
+    let xAxisField = findField(quickGraph.xAxis, availableFields.dimensions) || 
+                     findField(quickGraph.xAxis, availableFields.measures);
+    
+    if (!xAxisField && quickGraph.xAxis) {
+      // Check if it's likely a measure based on common patterns
+      const isMeasure = quickGraph.xAxis.includes('score') || 
+                       quickGraph.xAxis.includes('pct') || 
+                       quickGraph.xAxis.includes('avg') ||
+                       quickGraph.xAxis.includes('sum') ||
+                       quickGraph.xAxis.includes('lmp') ||
+                       quickGraph.xAxis.includes('headroom') ||
+                       quickGraph.xAxis.includes('hours');
+      xAxisField = createDynamicField(quickGraph.xAxis, isMeasure);
+    }
+    
+    // Find or create Y-Axis fields
+    const yAxisFields = (quickGraph.yAxis || []).map(yId => {
+      let field = findField(yId, availableFields.measures) ||
+                  findField(yId, availableFields.dimensions);
+      
+      if (!field && yId) {
+        field = createDynamicField(yId, true); // Y-axis fields are typically measures
+      }
+      
+      return field;
+    }).filter(Boolean);
+    
+    // Find or create Legend field
+    let legendField = null;
+    if (quickGraph.legend) {
+      legendField = findField(quickGraph.legend, availableFields.dimensions) ||
+                    findField(quickGraph.legend, availableFields.measures);
+      
+      if (!legendField) {
+        legendField = createDynamicField(quickGraph.legend, false);
+      }
+    }
+    
+    console.log('✅ Mapped fields:', {
+      xAxis: xAxisField,
+      yAxis: yAxisFields,
+      legend: legendField
+    });
+    
+    // Task 2: Populate the configuration with x-axis, y-axis, and other settings
+    const newConfig = {
+      ...panelConfig,
+      chartType: quickGraph.chartType,
+      xAxis: xAxisField,
+      primaryYAxis: yAxisFields.map(f => ({ 
+        ...f, 
+        aggregation: quickGraph.aggregation || (f.aggregation ? f.aggregation[0] : 'avg')
+      })),
+      legend: legendField,
+      dataSource: selectedDatabase,
+      showDataLabels: false,
+      showGridLines: true
+    };
+    
+    console.log('🎨 New panel config:', newConfig);
+    
+    // Update the panel config state - this will automatically show in field wells
+    setPanelConfig(newConfig);
+    setShowQuickGraphs(false);
+    
+    // Scroll to field configuration area so user can see the populated fields
+    setTimeout(() => {
+      const fieldWells = document.querySelector('.field-wells');
+      if (fieldWells) {
+        fieldWells.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }, 100);
+  };
+  
+  // Task 4: Clear all panels in current tab (tab-specific)
+  const clearAllPanels = () => {
+    if (!confirm(`Clear all panels in ${activeFuelTab} tab?`)) {
+      return;
+    }
+    
+    // Create fresh panels with no configurations
+    const clearedPanels = panels.map(panel => ({
+      ...panel,
+      config: null,
+      data: null
+    }));
+    
+    setPanels(clearedPanels);
+    setPanelsByTab(prev => ({
+      ...prev,
+      [activeFuelTab]: clearedPanels
+    }));
+    
+    // Also save to localStorage
+    setTimeout(() => {
+      localStorage.setItem('analyticsState', JSON.stringify({
+        panels: clearedPanels,
+        activeFuelTab,
+        panelsByTab: {
+          ...panelsByTab,
+          [activeFuelTab]: clearedPanels
+        }
+      }));
+    }, 100);
+  };
+  
+  // Task 5: Apply filter to data with highlighting support
+  const applyFilter = () => {
+    if (!activePanel) return;
+    
+    const panel = panels.find(p => p.id === activePanel);
+    if (!panel || !panel.config) return;
+    
+    const data = getRealData(panel.config);
+    if (!filterValue.trim()) {
+      // Update panel config to remove filter highlighting
+      setPanels(prevPanels => prevPanels.map(p => 
+        p.id === activePanel 
+          ? { ...p, config: { ...p.config, _filteredData: null, _highlightValue: null } }
+          : p
+      ));
+      setFilteredData(data);
+      return;
+    }
+    
+    // Filter data based on any field containing the filter value
+    const filtered = data.filter(row => {
+      return Object.values(row).some(val => 
+        String(val).toLowerCase().includes(filterValue.toLowerCase())
+      );
+    });
+    
+    setFilteredData(filtered);
+    
+    // Update panel config with filtered data and highlight value for comparison
+    setPanels(prevPanels => prevPanels.map(p => 
+      p.id === activePanel 
+        ? { 
+            ...p, 
+            config: { 
+              ...p.config, 
+              _filteredData: filtered, 
+              _highlightValue: filterValue,
+              _originalData: data // Keep original for comparison
+            } 
+          }
+        : p
+    ));
   };
   
   // Add field to axis
@@ -2159,7 +2791,7 @@ const Analytics = () => {
   return (
     <div className="analytics-page">
       
-      {/* Fuel Type Tabs - Horizontal bar below navbar */}
+      {/* Task 1: Fuel Type Tabs - All resource types in one horizontal bar */}
       <div className="fuel-tabs-bar">
         <div className="fuel-tabs-container">
           {fuelTypes.map(fuel => (
@@ -2182,6 +2814,19 @@ const Analytics = () => {
             Add Any
           </button>
         </div>
+        
+        {/* Task 4: Clear All Panels Button - Tab Specific */}
+        <button 
+          className="clear-all-panels-btn"
+          onClick={clearAllPanels}
+          title="Clear all panels in current tab"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14z"/>
+            <path d="M10 11v6M14 11v6"/>
+          </svg>
+          Clear All Panels
+        </button>
       </div>
       
       {/* 4-Panel Grid with Individual Resizable Tiles */}
@@ -2200,16 +2845,32 @@ const Analytics = () => {
             >
               <div className="panel-header">
                 <h3>{panel.title}</h3>
-                <button 
-                  className="panel-config-btn"
-                  onClick={() => openPanelConfig(panel.id)}
-                  title="Configure Panel"
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <circle cx="12" cy="12" r="3"/>
-                    <path d="M12 1v6m0 6v6M23 12h-6m-6 0H5"/>
-                  </svg>
-                </button>
+                <div className="panel-header-actions">
+                  {/* Task 2: Filter button moved to panel header */}
+                  <button 
+                    className="panel-filter-btn"
+                    onClick={() => {
+                      setActivePanel(panel.id);
+                      setShowFilterPopup(true);
+                    }}
+                    disabled={!panel.config}
+                    title="Filter data"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+                    </svg>
+                  </button>
+                  <button 
+                    className="panel-config-btn"
+                    onClick={() => openPanelConfig(panel.id)}
+                    title="Configure Panel"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="12" cy="12" r="3"/>
+                      <path d="M12 1v6m0 6v6M23 12h-6m-6 0H5"/>
+                    </svg>
+                  </button>
+                </div>
               </div>
               <div className="panel-content">
                 {renderChart(panel)}
@@ -2370,6 +3031,137 @@ const Analytics = () => {
                     <line x1="6" y1="20" x2="6" y2="14"/>
                   </svg>
                   <h3>Visualization</h3>
+                </div>
+                
+                {/* Task 3: Quick Graphs Dropdown in Format Column */}
+                <div className="format-section">
+                  <label className="format-label">Format Options</label>
+                  <div className="quick-graphs-dropdown">
+                    <button 
+                      className="quick-graphs-btn"
+                      onClick={() => setShowQuickGraphs(!showQuickGraphs)}
+                      title="Select from preconfigured analytics graphs"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                      </svg>
+                      Quick Graphs
+                    </button>
+                    
+                    {showQuickGraphs && (
+                      <div className="quick-graphs-menu">
+                        <div className="quick-graphs-header">
+                          <div className="quick-graphs-title">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                            </svg>
+                            <h4>Quick Analytics</h4>
+                          </div>
+                          <button onClick={() => setShowQuickGraphs(false)} className="close-btn">×</button>
+                        </div>
+                        <div className="quick-graphs-category">
+                          <div className="category-label">
+                            <span className="category-icon">📊</span>
+                            <span className="category-name">{activeFuelTab}</span>
+                            <span className="category-count">{getQuickGraphs().length} graphs</span>
+                          </div>
+                        </div>
+                        <div className="quick-graphs-list">
+                          {getQuickGraphs().map(graph => {
+                            const chartType = chartTypes.find(c => c.id === graph.chartType);
+                            return (
+                              <button
+                                key={graph.id}
+                                className="quick-graph-item"
+                                onClick={() => applyQuickGraph(graph)}
+                                title={`${graph.name}\n\nChart: ${chartType?.name || graph.chartType}\nX-Axis: ${graph.xAxis}\nY-Axis: ${Array.isArray(graph.yAxis) ? graph.yAxis.join(', ') : graph.yAxis}${graph.legend ? '\nLegend: ' + graph.legend : ''}`}
+                              >
+                                <div className="graph-icon-wrapper">
+                                  <span className="graph-id">{graph.id}</span>
+                                  {chartType && (
+                                    <div className="graph-chart-icon-container">
+                                      <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor" className="graph-chart-icon" dangerouslySetInnerHTML={{__html: chartType.svg}}></svg>
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="graph-details">
+                                  <span className="graph-name">{graph.name}</span>
+                                  <div className="graph-meta">
+                                    <span className="graph-type">
+                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                                      </svg>
+                                      {chartType?.name || graph.chartType}
+                                    </span>
+                                    <span className="graph-axes">
+                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <line x1="3" y1="12" x2="21" y2="12"/>
+                                        <line x1="12" y1="3" x2="12" y2="21"/>
+                                      </svg>
+                                      {graph.yAxis?.length || 1} axis
+                                    </span>
+                                  </div>
+                                </div>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="graph-arrow">
+                                  <polyline points="9 18 15 12 9 6"/>
+                                </svg>
+                              </button>
+                            );
+                          })}
+                          
+                          {/* Show custom saved graphs */}
+                          {customSavedGraphs.filter(g => g.fuelType === activeFuelTab).length > 0 && (
+                            <div className="custom-graphs-divider">
+                              <div className="divider-line"></div>
+                              <span className="divider-text">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                                </svg>
+                                Custom Saved
+                              </span>
+                              <div className="divider-line"></div>
+                            </div>
+                          )}
+                          {customSavedGraphs
+                            .filter(g => g.fuelType === activeFuelTab)
+                            .map(graph => {
+                              const chartType = chartTypes.find(c => c.id === graph.chartType);
+                              return (
+                                <button
+                                  key={graph.id}
+                                  className="quick-graph-item custom"
+                                  onClick={() => applyQuickGraph(graph)}
+                                  title={`Custom: ${graph.name}`}
+                                >
+                                  <div className="graph-icon-wrapper">
+                                    <span className="graph-id custom-star">⭐</span>
+                                    {chartType && (
+                                      <div className="graph-chart-icon-container">
+                                        <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor" className="graph-chart-icon" dangerouslySetInnerHTML={{__html: chartType.svg}}></svg>
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="graph-details">
+                                    <span className="graph-name">{graph.name}</span>
+                                    <div className="graph-meta">
+                                      <span className="graph-type">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                                        </svg>
+                                        {chartType?.name || graph.chartType}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="graph-arrow">
+                                    <polyline points="9 18 15 12 9 6"/>
+                                  </svg>
+                                </button>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 
                 {/* Chart Type Selector (Task 3: Display names below icons) */}
@@ -2625,6 +3417,22 @@ const Analytics = () => {
               <button className="btn-cancel" onClick={() => setShowConfigModal(false)}>
                 Cancel
               </button>
+              
+              {/* Task 4: Save Custom Graph Button */}
+              <button 
+                className="btn-save-custom"
+                onClick={saveCustomGraph}
+                disabled={!panelConfig.chartType || !panelConfig.xAxis || panelConfig.primaryYAxis.length === 0}
+                title="Save this configuration as a custom quick graph"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
+                  <polyline points="17 21 17 13 7 13 7 21"/>
+                  <polyline points="7 3 7 8 15 8"/>
+                </svg>
+                Save Graph
+              </button>
+              
               <button 
                 className="btn-save" 
                 onClick={savePanelConfig}
@@ -2666,6 +3474,126 @@ const Analytics = () => {
               <button className="add-fuel-btn" onClick={handleAddFuel}>
                 Add Fuel Type
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Task 2 & 5: Filter Popup */}
+      {showFilterPopup && (
+        <div className="modal-overlay filter-popup-overlay" onClick={() => setShowFilterPopup(false)}>
+          <div className="filter-popup-content" onClick={(e) => e.stopPropagation()}>
+            <div className="filter-popup-header">
+              <h2>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+                </svg>
+                Filter and Compare Data
+              </h2>
+              <button 
+                className="filter-close-btn"
+                onClick={() => setShowFilterPopup(false)}
+                title="Close filter"
+              >
+                ×
+              </button>
+            </div>
+            
+            <div className="filter-popup-body">
+              <div className="filter-controls">
+                <input
+                  type="text"
+                  className="filter-input"
+                  placeholder="Search by bus ID, zone, or any parameter..."
+                  value={filterValue}
+                  onChange={(e) => setFilterValue(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && applyFilter()}
+                />
+                <button 
+                  className="filter-apply-btn"
+                  onClick={applyFilter}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="11" cy="11" r="8"/>
+                    <path d="M21 21l-4.35-4.35"/>
+                  </svg>
+                  Apply Filter
+                </button>
+                <button 
+                  className="filter-clear-btn"
+                  onClick={() => {
+                    setFilterValue('');
+                    setFilteredData(null);
+                  }}
+                >
+                  Clear
+                </button>
+              </div>
+              
+              <div className="filter-results">
+                {activePanel && panels.find(p => p.id === activePanel)?.config ? (
+                  <div className="filtered-chart-container">
+                    {filteredData && filteredData.length > 0 ? (
+                      <>
+                        <p className="filter-count">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <polyline points="20 6 9 17 4 12"/>
+                          </svg>
+                          {filteredData.length} results found {filterValue && `matching "${filterValue}"`}
+                        </p>
+                        <div className="filter-info">
+                          <span className="filter-legend">
+                            <span className="legend-item">
+                              <span className="legend-dot highlighted"></span>
+                              Matching data
+                            </span>
+                            <span className="legend-item">
+                              <span className="legend-dot dimmed"></span>
+                              Other data (dimmed)
+                            </span>
+                          </span>
+                        </div>
+                      </>
+                    ) : filteredData && filteredData.length === 0 ? (
+                      <div className="filter-no-results">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2">
+                          <circle cx="12" cy="12" r="10"/>
+                          <line x1="15" y1="9" x2="9" y2="15"/>
+                          <line x1="9" y1="9" x2="15" y2="15"/>
+                        </svg>
+                        <span>No results match your filter criteria</span>
+                      </div>
+                    ) : (
+                      <p className="filter-instruction">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <circle cx="11" cy="11" r="8"/>
+                          <path d="M21 21l-4.35-4.35"/>
+                        </svg>
+                        Enter search criteria above to filter data
+                      </p>
+                    )}
+                    <div className="filtered-chart">
+                      {renderChart({
+                        ...panels.find(p => p.id === activePanel),
+                        config: {
+                          ...panels.find(p => p.id === activePanel).config,
+                          _filteredData: filteredData && filteredData.length > 0 ? filteredData : null,
+                          _highlightValue: filteredData && filteredData.length > 0 ? filterValue : null,
+                          _originalData: filteredData && filteredData.length > 0 ? getRealData(panels.find(p => p.id === activePanel).config) : null
+                        }
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="filter-placeholder">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2">
+                      <circle cx="12" cy="12" r="10"/>
+                      <path d="M21 21l-4.35-4.35"/>
+                    </svg>
+                    <p>Select a panel with a graph first</p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

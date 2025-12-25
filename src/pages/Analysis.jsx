@@ -199,11 +199,19 @@ const Analysis = () => {
     Array.from({length: 24}, (_, i) => 40 + Math.random() * 80), []);
   
   const powerFlowData = useMemo(() => 
-    ['Solar', 'Wind', 'Gas', 'Coal', 'Nuclear'].map((fuel, i) => ({
-      fuel,
-      base: 50 + Math.random() * 80,
-      demand: 120 + i * 15
-    })), []);
+    ['Solar', 'Wind', 'Gas', 'Coal', 'Nuclear'].map((fuel, i) => {
+      // Base values adjusted for scenario and year
+      const yearMultiplier = (powerFlowYear - 2024) * 0.05 + 1;
+      const scenarioMultiplier = powerFlowScenario === 'summer-peak' ? 1.2 : 
+                                 powerFlowScenario === 'winter-peak' ? 1.15 : 
+                                 powerFlowScenario === 'summer-offpeak' ? 0.85 : 0.75;
+      
+      return {
+        fuel,
+        base: (50 + i * 15) * yearMultiplier * scenarioMultiplier,
+        demand: (120 + i * 15) * yearMultiplier * (scenarioMultiplier * 0.9)
+      };
+    }), [powerFlowScenario, powerFlowYear]);
   
   const lmpForecastData = useMemo(() => 
     [2025, 2026, 2027, 2028, 2029, 2030].map((year, i) => ({
@@ -856,16 +864,14 @@ const Analysis = () => {
                         
                         {/* Bars for each fuel type */}
                         {powerFlowData.map((data, i) => {
-                          const yearMultiplier = (powerFlowYear - 2024) * 0.05 + 1;
-                          const scenarioMultiplier = powerFlowScenario === 'summer-peak' ? 1.2 : powerFlowScenario === 'winter-peak' ? 1.15 : 0.85;
-                          const height = (data.base * yearMultiplier * scenarioMultiplier) * 0.8;
+                          const height = data.base * 0.8;
                           const x = 70 + i * 60;
                           const colors = ['#fbbf24', '#60a5fa', '#94a3b8', '#1f2937', '#8b5cf6'];
                           return (
                             <g key={data.fuel}>
                               <rect x={x} y={200 - height} width="45" height={height} fill={colors[i]} rx="3" opacity="0.85"/>
                               <text x={x + 22.5} y={195 - height} fontSize="11" fontWeight="600" fill="#1e293b" textAnchor="middle">
-                                {(height * 8).toFixed(0)}
+                                {(data.base * 8).toFixed(0)}
                               </text>
                               <text x={x + 22.5} y="220" fontSize="10" fill="#64748b" textAnchor="middle">{data.fuel}</text>
                             </g>
@@ -876,7 +882,7 @@ const Analysis = () => {
                         {(() => {
                           const demandPoints = powerFlowData.map((data, i) => {
                             const x = 70 + i * 60 + 22.5;
-                            const y = 200 - (data.demand * 0.9);
+                            const y = 200 - (data.demand * 0.65);
                             return {x, y, value: data.demand};
                           });
                           const pathData = demandPoints.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
@@ -930,11 +936,12 @@ const Analysis = () => {
                           );
                         })}
                         
-                        {/* Line showing demand trend (right Y-axis) */}
+                        {/* Line showing demand trend (right Y-axis) - aligned with bar tops */}
                         {(() => {
                           const demandPoints = lmpForecastData.map((data, i) => {
                             const x = 60 + i * 50 + 21;
-                            const y = 200 - (data.demand * 0.75);
+                            const barHeight = (data.lmp * 1.5);
+                            const y = 200 - barHeight; // Align with top of bars
                             return {x, y, value: data.demand};
                           });
                           const pathData = demandPoints.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
