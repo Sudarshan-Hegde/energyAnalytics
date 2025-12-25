@@ -378,8 +378,24 @@ const Analytics = () => {
       return value;
     };
     
-    // For scatter plots and table charts, return raw data without aggregation
-    if (config.chartType === 'scatter' || config.chartType === 'table') {
+    // For scatter plots, table charts, and bar charts with unique identifiers (bus_name, bus_id), return raw data without aggregation
+    const uniqueIdentifiers = ['bus_name', 'bus_id', 'substation_name'];
+    const isUniqueXAxis = uniqueIdentifiers.includes(config.xAxis.id);
+    const shouldReturnRawData = config.chartType === 'scatter' || 
+                                config.chartType === 'table' || 
+                                config.chartType === 'bubble' ||
+                                (config.chartType === 'bar' && isUniqueXAxis);
+    
+    console.log('🔍 getRealData config:', {
+      chartType: config.chartType,
+      xAxisId: config.xAxis.id,
+      yAxisFields: config.primaryYAxis.map(f => f.id),
+      isUniqueXAxis,
+      shouldReturnRawData,
+      sourceDataRows: sourceData.length
+    });
+    
+    if (shouldReturnRawData) {
       // Direct property access with type conversion
       const getValue = (row, fieldId) => {
         const mappedId = fieldMapping[fieldId] || fieldId;
@@ -432,17 +448,36 @@ const Analytics = () => {
         return hasValidY;
       });
       
-      // Only log if we have issues
+      // Log data processing details
+      console.log('📊 Raw data processing:', {
+        rawDataRows: rawData.length,
+        filteredDataRows: filteredData.length,
+        sampleRawRow: rawData[0],
+        sampleFilteredRow: filteredData[0]
+      });
+      
       if (filteredData.length === 0) {
         console.warn('⚠️ No data available for chart:', {
           chartType: config.chartType,
           xAxis: config.xAxis.id,
           yAxis: config.primaryYAxis.map(f => f.id),
           mappedXAxis: fieldMapping[config.xAxis.id] || config.xAxis.id,
-          totalRows: sourceData.length
+          totalRows: sourceData.length,
+          sampleRawData: rawData.slice(0, 3)
         });
       }
       
+      // Apply limit for top N results (for bar charts with raw data)
+      if (config.limit && config.chartType === 'bar' && filteredData.length > 0) {
+        // Sort by the first primary Y-axis field in descending order
+        const sortField = config.primaryYAxis[0].id;
+        filteredData.sort((a, b) => (b[sortField] || 0) - (a[sortField] || 0));
+        const limitedData = filteredData.slice(0, config.limit);
+        console.log(`✂️ Applied limit of ${config.limit} to raw data, showing top ${limitedData.length} of ${filteredData.length} results`);
+        return limitedData;
+      }
+      
+      console.log('📊 Returning raw data:', filteredData.length, 'rows');
       return filteredData;
     }
     
@@ -457,7 +492,7 @@ const Analytics = () => {
     });
     
     // Aggregate data based on configuration
-    return Object.keys(groupedData).map(xValue => {
+    let aggregatedData = Object.keys(groupedData).map(xValue => {
       const dataPoint = { category: xValue };
       
       // Calculate primary Y-axis values
@@ -510,6 +545,18 @@ const Analytics = () => {
       
       return dataPoint;
     });
+    
+    // Apply limit for top N results (for bar charts with aggregated data)
+    if (config.limit && config.chartType === 'bar' && aggregatedData.length > 0) {
+      // Sort by the first primary Y-axis field in descending order
+      const sortField = config.primaryYAxis[0].id;
+      aggregatedData.sort((a, b) => (b[sortField] || 0) - (a[sortField] || 0));
+      aggregatedData = aggregatedData.slice(0, config.limit);
+      console.log(`✂️ Applied limit of ${config.limit}, showing top ${aggregatedData.length} results`);
+    }
+    
+    console.log('📈 Final data count:', aggregatedData.length);
+    return aggregatedData;
   };
   
   // Render chart based on configuration
@@ -530,6 +577,15 @@ const Analytics = () => {
     // Task 1: Use filtered data if available, otherwise fetch from database
     const data = config._filteredData || getRealData(config);
     const chartType = config.chartType;
+    
+    console.log('📈 Render chart:', {
+      panelId: panel.id,
+      chartType,
+      dataRows: data?.length || 0,
+      xAxis: config.xAxis?.name,
+      yAxis: config.primaryYAxis?.map(f => f.name),
+      sampleData: data?.[0]
+    });
     
     if (loading) {
       return (
@@ -572,6 +628,21 @@ const Analytics = () => {
       const maxValue = Math.max(...data.flatMap(d => 
         config.primaryYAxis.map(f => d[f.id] || 0)
       ));
+      
+      console.log('📊 Bar chart data analysis:', {
+        dataRows: data.length,
+        maxValue,
+        sampleValues: data.slice(0, 3).map(d => ({
+          category: d[config.xAxis.id],
+          values: config.primaryYAxis.map(f => ({
+            field: f.id,
+            value: d[f.id],
+            type: typeof d[f.id]
+          }))
+        })),
+        allYValues: data.flatMap(d => config.primaryYAxis.map(f => d[f.id]))
+      });
+      
       const chartHeight = 200;
       const chartWidth = 450;
       const barWidth = chartWidth / (data.length * config.primaryYAxis.length + data.length + 1);
@@ -1996,32 +2067,39 @@ const Analytics = () => {
       // Limit data for better performance
       const displayData = data.slice(0, 100);
       
+      // Use columns from config if specified, otherwise use xAxis and primaryYAxis
+      const displayColumns = config.columns && config.columns.length > 0
+        ? config.columns.map(colId => {
+            // Find field in available fields or create dynamic field
+            const field = availableFields.dimensions.find(f => f.id === colId) ||
+                         availableFields.measures.find(f => f.id === colId) || {
+                           id: colId,
+                           name: colId.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+                         };
+            return field;
+          })
+        : [config.xAxis, ...config.primaryYAxis];
+      
       return (
         <div className="table-chart-container">
           <table className="data-table">
             <thead>
               <tr>
-                <th>{config.xAxis.name}</th>
-                {config.primaryYAxis.map(field => (
+                {displayColumns.map(field => (
                   <th key={field.id}>{field.name}</th>
                 ))}
-                {config.legend && <th>{config.legend.name}</th>}
               </tr>
             </thead>
             <tbody>
               {displayData.map((row, i) => (
                 <tr key={i}>
-                  <td>{row.category || row[config.xAxis.id]}</td>
-                  {config.primaryYAxis.map(field => (
+                  {displayColumns.map(field => (
                     <td key={field.id}>
                       {typeof row[field.id] === 'number' 
                         ? row[field.id].toFixed(2) 
-                        : row[field.id] || '-'}
+                        : row[field.id] || row.category || '-'}
                     </td>
                   ))}
-                  {config.legend && (
-                    <td>{row[config.legend.id] || '-'}</td>
-                  )}
                 </tr>
               ))}
             </tbody>
@@ -2167,6 +2245,767 @@ const Analytics = () => {
             {config.primaryYAxis[0].name}
           </text>
         </svg>
+      );
+    }
+    
+    // Gauge Chart
+    if (chartType === 'gauge') {
+      const value = data.length > 0 ? (data[0][config.primaryYAxis[0].id] || 0) : 0;
+      const maxValue = Math.max(...data.map(d => d[config.primaryYAxis[0].id] || 0));
+      const percentage = maxValue > 0 ? (value / maxValue) : 0;
+      const angle = -180 + (percentage * 180);
+      
+      return (
+        <svg width="100%" height="100%" viewBox="0 0 300 200" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <linearGradient id={`gauge-gradient-${panel.id}`} x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="#ef4444" />
+              <stop offset="50%" stopColor="#f59e0b" />
+              <stop offset="100%" stopColor="#10b981" />
+            </linearGradient>
+          </defs>
+          {/* Background arc */}
+          <path
+            d="M 50 150 A 100 100 0 0 1 250 150"
+            fill="none"
+            stroke="#e5e7eb"
+            strokeWidth="20"
+            strokeLinecap="round"
+          />
+          {/* Value arc */}
+          <path
+            d="M 50 150 A 100 100 0 0 1 250 150"
+            fill="none"
+            stroke={`url(#gauge-gradient-${panel.id})`}
+            strokeWidth="20"
+            strokeLinecap="round"
+            strokeDasharray={`${percentage * 314} 314`}
+          />
+          {/* Needle */}
+          <line
+            x1="150"
+            y1="150"
+            x2={150 + 80 * Math.cos((angle * Math.PI) / 180)}
+            y2={150 + 80 * Math.sin((angle * Math.PI) / 180)}
+            stroke="#1f2937"
+            strokeWidth="3"
+            strokeLinecap="round"
+          />
+          <circle cx="150" cy="150" r="8" fill="#1f2937" />
+          {/* Value display */}
+          <text x="150" y="170" textAnchor="middle" fontSize="24" fill="#1f2937" fontWeight="700">
+            {value.toFixed(1)}
+          </text>
+          <text x="150" y="190" textAnchor="middle" fontSize="12" fill="#6b7280">
+            {config.primaryYAxis[0].name}
+          </text>
+        </svg>
+      );
+    }
+    
+    // Donut Chart
+    if (chartType === 'donut') {
+      const total = data.reduce((sum, d) => sum + (d[config.primaryYAxis[0].id] || 0), 0);
+      const cx = 250;
+      const cy = 140;
+      const outerRadius = 100;
+      const innerRadius = 60;
+      let currentAngle = -90;
+      
+      return (
+        <svg width="100%" height="100%" viewBox="0 0 500 280" preserveAspectRatio="xMidYMid meet">
+          {data.map((d, i) => {
+            const value = d[config.primaryYAxis[0].id] || 0;
+            const percentage = value / total;
+            const angle = percentage * 360;
+            
+            const startAngle = (currentAngle * Math.PI) / 180;
+            const endAngle = ((currentAngle + angle) * Math.PI) / 180;
+            
+            const x1Outer = cx + outerRadius * Math.cos(startAngle);
+            const y1Outer = cy + outerRadius * Math.sin(startAngle);
+            const x2Outer = cx + outerRadius * Math.cos(endAngle);
+            const y2Outer = cy + outerRadius * Math.sin(endAngle);
+            
+            const x1Inner = cx + innerRadius * Math.cos(startAngle);
+            const y1Inner = cy + innerRadius * Math.sin(startAngle);
+            const x2Inner = cx + innerRadius * Math.cos(endAngle);
+            const y2Inner = cy + innerRadius * Math.sin(endAngle);
+            
+            const largeArc = angle > 180 ? 1 : 0;
+            
+            const pathData = [
+              `M ${x1Outer} ${y1Outer}`,
+              `A ${outerRadius} ${outerRadius} 0 ${largeArc} 1 ${x2Outer} ${y2Outer}`,
+              `L ${x2Inner} ${y2Inner}`,
+              `A ${innerRadius} ${innerRadius} 0 ${largeArc} 0 ${x1Inner} ${y1Inner}`,
+              'Z'
+            ].join(' ');
+            
+            currentAngle += angle;
+            
+            return (
+              <g key={i}>
+                <path
+                  d={pathData}
+                  fill={colorPalette[i % colorPalette.length]}
+                  stroke="white"
+                  strokeWidth="2"
+                />
+              </g>
+            );
+          })}
+          
+          {/* Center text */}
+          <text x={cx} y={cy} textAnchor="middle" fontSize="32" fill="#1f2937" fontWeight="700">
+            {total.toFixed(0)}
+          </text>
+          <text x={cx} y={cy + 20} textAnchor="middle" fontSize="12" fill="#6b7280">
+            Total
+          </text>
+          
+          {/* Legend */}
+          {data.map((d, i) => (
+            <g key={i} transform={`translate(360, ${30 + i * 25})`}>
+              <rect x="0" y="0" width="15" height="15" fill={colorPalette[i % colorPalette.length]} rx="2" />
+              <text x="20" y="12" fontSize="11" fill="#374151">
+                {d.category}: {d[config.primaryYAxis[0].id]}
+              </text>
+            </g>
+          ))}
+        </svg>
+      );
+    }
+    
+    // Waterfall Chart
+    if (chartType === 'waterfall') {
+      const chartHeight = 200;
+      const chartWidth = 450;
+      const padding = { top: 20, right: 40, bottom: 40, left: 50 };
+      const barWidth = chartWidth / (data.length + 1);
+      
+      let runningTotal = 0;
+      const barData = data.map((d, i) => {
+        const value = d[config.primaryYAxis[0].id] || 0;
+        const start = runningTotal;
+        runningTotal += value;
+        return { ...d, start, end: runningTotal, value, isPositive: value >= 0 };
+      });
+      
+      const maxValue = Math.max(...barData.map(d => Math.abs(d.end)));
+      const minValue = Math.min(...barData.map(d => d.start), 0);
+      const range = maxValue - minValue;
+      
+      return (
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`} preserveAspectRatio="xMidYMid meet">
+          {barData.map((d, i) => {
+            const x = padding.left + i * barWidth + barWidth / 4;
+            const barHeight = Math.abs(d.value / range) * chartHeight;
+            const y = padding.top + chartHeight - ((d.end - minValue) / range) * chartHeight;
+            
+            return (
+              <g key={i}>
+                <rect
+                  x={x}
+                  y={y}
+                  width={barWidth * 0.5}
+                  height={barHeight}
+                  fill={d.isPositive ? '#10b981' : '#ef4444'}
+                  opacity="0.8"
+                />
+                {i < barData.length - 1 && (
+                  <line
+                    x1={x + barWidth * 0.5}
+                    y1={y}
+                    x2={x + barWidth}
+                    y2={padding.top + chartHeight - ((barData[i + 1].start - minValue) / range) * chartHeight}
+                    stroke="#94a3b8"
+                    strokeWidth="1"
+                    strokeDasharray="4,4"
+                  />
+                )}
+                <text
+                  x={x + barWidth * 0.25}
+                  y={padding.top + chartHeight + 20}
+                  textAnchor="middle"
+                  fontSize="10"
+                  fill="#374151"
+                >
+                  {d.category}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      );
+    }
+    
+    // Funnel Chart
+    if (chartType === 'funnel') {
+      const chartHeight = 250;
+      const chartWidth = 400;
+      const padding = { top: 20, right: 80, bottom: 20, left: 80 };
+      const maxValue = Math.max(...data.map(d => d[config.primaryYAxis[0].id] || 0));
+      const segmentHeight = chartHeight / data.length;
+      
+      return (
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`} preserveAspectRatio="xMidYMid meet">
+          {data.map((d, i) => {
+            const value = d[config.primaryYAxis[0].id] || 0;
+            const widthRatio = value / maxValue;
+            const topWidth = chartWidth * widthRatio;
+            const nextValue = i < data.length - 1 ? (data[i + 1][config.primaryYAxis[0].id] || 0) : value * 0.5;
+            const bottomWidth = chartWidth * (nextValue / maxValue);
+            
+            const y = padding.top + i * segmentHeight;
+            const topLeft = padding.left + (chartWidth - topWidth) / 2;
+            const bottomLeft = padding.left + (chartWidth - bottomWidth) / 2;
+            
+            return (
+              <g key={i}>
+                <path
+                  d={`M ${topLeft} ${y} L ${topLeft + topWidth} ${y} L ${bottomLeft + bottomWidth} ${y + segmentHeight} L ${bottomLeft} ${y + segmentHeight} Z`}
+                  fill={colorPalette[i % colorPalette.length]}
+                  opacity="0.85"
+                  stroke="white"
+                  strokeWidth="2"
+                />
+                <text
+                  x={padding.left + chartWidth / 2}
+                  y={y + segmentHeight / 2 + 5}
+                  textAnchor="middle"
+                  fontSize="12"
+                  fill="white"
+                  fontWeight="600"
+                >
+                  {d.category}: {value}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      );
+    }
+    
+    // Radar Chart
+    if (chartType === 'radar') {
+      const cx = 200;
+      const cy = 180;
+      const radius = 120;
+      const numAxes = data.length;
+      const angleStep = (2 * Math.PI) / numAxes;
+      
+      const maxValue = Math.max(...data.map(d => d[config.primaryYAxis[0].id] || 0));
+      
+      return (
+        <svg width="100%" height="100%" viewBox="0 0 400 360" preserveAspectRatio="xMidYMid meet">
+          {/* Grid circles */}
+          {[0.25, 0.5, 0.75, 1].map((ratio, i) => (
+            <circle
+              key={i}
+              cx={cx}
+              cy={cy}
+              r={radius * ratio}
+              fill="none"
+              stroke="#e5e7eb"
+              strokeWidth="1"
+            />
+          ))}
+          
+          {/* Axes */}
+          {data.map((d, i) => {
+            const angle = i * angleStep - Math.PI / 2;
+            const x = cx + radius * Math.cos(angle);
+            const y = cy + radius * Math.sin(angle);
+            
+            return (
+              <g key={i}>
+                <line
+                  x1={cx}
+                  y1={cy}
+                  x2={x}
+                  y2={y}
+                  stroke="#e5e7eb"
+                  strokeWidth="1"
+                />
+                <text
+                  x={cx + (radius + 20) * Math.cos(angle)}
+                  y={cy + (radius + 20) * Math.sin(angle)}
+                  textAnchor="middle"
+                  fontSize="11"
+                  fill="#374151"
+                >
+                  {d.category}
+                </text>
+              </g>
+            );
+          })}
+          
+          {/* Data polygon */}
+          {config.primaryYAxis.map((field, j) => {
+            const points = data.map((d, i) => {
+              const angle = i * angleStep - Math.PI / 2;
+              const value = d[field.id] || 0;
+              const r = (value / maxValue) * radius;
+              const x = cx + r * Math.cos(angle);
+              const y = cy + r * Math.sin(angle);
+              return `${x},${y}`;
+            }).join(' ');
+            
+            return (
+              <g key={field.id}>
+                <polygon
+                  points={points}
+                  fill={colorPalette[j % colorPalette.length]}
+                  opacity="0.3"
+                  stroke={colorPalette[j % colorPalette.length]}
+                  strokeWidth="2"
+                />
+                {data.map((d, i) => {
+                  const angle = i * angleStep - Math.PI / 2;
+                  const value = d[field.id] || 0;
+                  const r = (value / maxValue) * radius;
+                  const x = cx + r * Math.cos(angle);
+                  const y = cy + r * Math.sin(angle);
+                  return (
+                    <circle
+                      key={i}
+                      cx={x}
+                      cy={y}
+                      r="4"
+                      fill={colorPalette[j % colorPalette.length]}
+                    />
+                  );
+                })}
+              </g>
+            );
+          })}
+        </svg>
+      );
+    }
+    
+    // Bubble Chart
+    if (chartType === 'bubble') {
+      const xValues = data.map(d => parseFloat(d[config.xAxis.id]) || 0);
+      const yValues = data.map(d => parseFloat(d[config.primaryYAxis[0].id]) || 0);
+      // Use size field from config if available, otherwise use second Y-axis field
+      const sizeField = config.size || (config.primaryYAxis.length > 1 ? config.primaryYAxis[1].id : null);
+      const sizeValues = sizeField
+        ? data.map(d => parseFloat(d[sizeField]) || 1)
+        : data.map(() => 5);
+      
+      const minX = Math.min(...xValues);
+      const maxX = Math.max(...xValues);
+      const minY = Math.min(...yValues);
+      const maxY = Math.max(...yValues);
+      const maxSize = Math.max(...sizeValues);
+      
+      const xRange = maxX - minX || 1;
+      const yRange = maxY - minY || 1;
+      
+      const chartHeight = 200;
+      const chartWidth = 450;
+      const padding = { top: 20, right: 40, bottom: 50, left: 60 };
+      
+      return (
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`} preserveAspectRatio="xMidYMid meet">
+          {config.showGridLines && [0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
+            <g key={i}>
+              <line 
+                x1={padding.left} 
+                y1={padding.top + chartHeight * ratio}
+                x2={padding.left + chartWidth} 
+                y2={padding.top + chartHeight * ratio}
+                stroke="#e5e7eb" 
+                strokeWidth="1"
+              />
+            </g>
+          ))}
+          
+          {data.map((d, i) => {
+            const xVal = parseFloat(d[config.xAxis.id]) || 0;
+            const yVal = parseFloat(d[config.primaryYAxis[0].id]) || 0;
+            const size = sizeValues[i];
+            
+            const x = padding.left + ((xVal - minX) / xRange) * chartWidth;
+            const y = padding.top + chartHeight - ((yVal - minY) / yRange) * chartHeight;
+            const r = 5 + (size / maxSize) * 20;
+            
+            return (
+              <circle
+                key={i}
+                cx={x}
+                cy={y}
+                r={r}
+                fill={colorPalette[i % colorPalette.length]}
+                opacity="0.6"
+                stroke="white"
+                strokeWidth="2"
+              />
+            );
+          })}
+          
+          <text x={padding.left + chartWidth / 2} y={padding.top + chartHeight + 35} textAnchor="middle" fontSize="12" fill="#1f2937" fontWeight="600">
+            {config.xAxis.name}
+          </text>
+          <text x={20} y={padding.top + chartHeight / 2} textAnchor="middle" fontSize="12" fill="#1f2937" fontWeight="600" transform={`rotate(-90 20 ${padding.top + chartHeight / 2})`}>
+            {config.primaryYAxis[0].name}
+          </text>
+        </svg>
+      );
+    }
+    
+    // Treemap Chart
+    if (chartType === 'treemap') {
+      const chartWidth = 500;
+      const chartHeight = 280;
+      const total = data.reduce((sum, d) => sum + (d[config.primaryYAxis[0].id] || 0), 0);
+      
+      // Simple treemap layout (horizontal slicing)
+      let currentY = 0;
+      const rects = data.map((d, i) => {
+        const value = d[config.primaryYAxis[0].id] || 0;
+        const percentage = value / total;
+        const height = chartHeight * percentage;
+        const rect = { x: 0, y: currentY, width: chartWidth, height, value, category: d.category };
+        currentY += height;
+        return rect;
+      });
+      
+      return (
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth} ${chartHeight}`} preserveAspectRatio="xMidYMid meet">
+          {rects.map((rect, i) => (
+            <g key={i}>
+              <rect
+                x={rect.x}
+                y={rect.y}
+                width={rect.width}
+                height={rect.height}
+                fill={colorPalette[i % colorPalette.length]}
+                opacity="0.8"
+                stroke="white"
+                strokeWidth="2"
+              />
+              {rect.height > 30 && (
+                <text
+                  x={rect.x + rect.width / 2}
+                  y={rect.y + rect.height / 2}
+                  textAnchor="middle"
+                  fontSize="12"
+                  fill="white"
+                  fontWeight="600"
+                >
+                  {rect.category}: {rect.value}
+                </text>
+              )}
+            </g>
+          ))}
+        </svg>
+      );
+    }
+    
+    // Box Plot Chart
+    if (chartType === 'box-plot') {
+      const chartHeight = 200;
+      const chartWidth = 450;
+      const padding = { top: 20, right: 40, bottom: 40, left: 50 };
+      const boxWidth = (chartWidth / data.length) * 0.6;
+      
+      // For each category, calculate quartiles from primaryYAxis values
+      const boxData = data.map(d => {
+        const values = config.primaryYAxis
+          .map(f => d[f.id] || 0)
+          .filter(v => v !== null && v !== undefined)
+          .sort((a, b) => a - b);
+        
+        if (values.length === 0) return null;
+        
+        const q1 = values[Math.floor(values.length * 0.25)];
+        const median = values[Math.floor(values.length * 0.5)];
+        const q3 = values[Math.floor(values.length * 0.75)];
+        const min = values[0];
+        const max = values[values.length - 1];
+        
+        return { category: d.category, min, q1, median, q3, max };
+      }).filter(Boolean);
+      
+      const maxValue = Math.max(...boxData.map(d => d.max));
+      
+      return (
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`} preserveAspectRatio="xMidYMid meet">
+          {boxData.map((d, i) => {
+            const x = padding.left + (i * chartWidth) / boxData.length + ((chartWidth / boxData.length) - boxWidth) / 2;
+            const xCenter = x + boxWidth / 2;
+            
+            const yMin = padding.top + chartHeight - (d.min / maxValue) * chartHeight;
+            const yQ1 = padding.top + chartHeight - (d.q1 / maxValue) * chartHeight;
+            const yMedian = padding.top + chartHeight - (d.median / maxValue) * chartHeight;
+            const yQ3 = padding.top + chartHeight - (d.q3 / maxValue) * chartHeight;
+            const yMax = padding.top + chartHeight - (d.max / maxValue) * chartHeight;
+            
+            return (
+              <g key={i}>
+                {/* Whiskers */}
+                <line x1={xCenter} y1={yMin} x2={xCenter} y2={yQ1} stroke="#3b82f6" strokeWidth="2" />
+                <line x1={xCenter} y1={yQ3} x2={xCenter} y2={yMax} stroke="#3b82f6" strokeWidth="2" />
+                <line x1={x} y1={yMin} x2={x + boxWidth} y2={yMin} stroke="#3b82f6" strokeWidth="2" />
+                <line x1={x} y1={yMax} x2={x + boxWidth} y2={yMax} stroke="#3b82f6" strokeWidth="2" />
+                
+                {/* Box */}
+                <rect
+                  x={x}
+                  y={yQ3}
+                  width={boxWidth}
+                  height={yQ1 - yQ3}
+                  fill={colorPalette[i % colorPalette.length]}
+                  opacity="0.7"
+                  stroke="#3b82f6"
+                  strokeWidth="2"
+                />
+                
+                {/* Median line */}
+                <line
+                  x1={x}
+                  y1={yMedian}
+                  x2={x + boxWidth}
+                  y2={yMedian}
+                  stroke="#1f2937"
+                  strokeWidth="3"
+                />
+                
+                <text
+                  x={xCenter}
+                  y={padding.top + chartHeight + 20}
+                  textAnchor="middle"
+                  fontSize="11"
+                  fill="#374151"
+                >
+                  {d.category}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      );
+    }
+    
+    // Violin Plot Chart
+    if (chartType === 'violin') {
+      const chartHeight = 200;
+      const chartWidth = 450;
+      const padding = { top: 20, right: 40, bottom: 40, left: 50 };
+      const violinWidth = (chartWidth / data.length) * 0.8;
+      
+      const maxValue = Math.max(...data.flatMap(d => 
+        config.primaryYAxis.map(f => d[f.id] || 0)
+      ));
+      
+      return (
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`} preserveAspectRatio="xMidYMid meet">
+          {data.map((d, i) => {
+            const x = padding.left + (i * chartWidth) / data.length;
+            const xCenter = x + (chartWidth / data.length) / 2;
+            
+            // Create violin shape using average value
+            const values = config.primaryYAxis.map(f => d[f.id] || 0);
+            const avgValue = values.reduce((a, b) => a + b, 0) / values.length;
+            const y = padding.top + chartHeight - (avgValue / maxValue) * chartHeight;
+            
+            // Simple violin shape (ellipse)
+            return (
+              <g key={i}>
+                <ellipse
+                  cx={xCenter}
+                  cy={y}
+                  rx={violinWidth / 2}
+                  ry={chartHeight / 4}
+                  fill={colorPalette[i % colorPalette.length]}
+                  opacity="0.5"
+                  stroke={colorPalette[i % colorPalette.length]}
+                  strokeWidth="2"
+                />
+                <line
+                  x1={xCenter}
+                  y1={padding.top}
+                  x2={xCenter}
+                  y2={padding.top + chartHeight}
+                  stroke="#1f2937"
+                  strokeWidth="2"
+                />
+                <text
+                  x={xCenter}
+                  y={padding.top + chartHeight + 20}
+                  textAnchor="middle"
+                  fontSize="11"
+                  fill="#374151"
+                >
+                  {d.category}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      );
+    }
+    
+    // Histogram Chart
+    if (chartType === 'histogram') {
+      const maxValue = Math.max(...data.flatMap(d => 
+        config.primaryYAxis.map(f => d[f.id] || 0)
+      ));
+      const chartHeight = 200;
+      const chartWidth = 450;
+      const barWidth = (chartWidth / data.length) * 0.9;
+      const padding = { top: 20, right: 40, bottom: 40, left: 50 };
+      
+      return (
+        <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`} preserveAspectRatio="xMidYMid meet">
+          {config.showGridLines && [0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
+            <line 
+              key={i}
+              x1={padding.left} 
+              y1={padding.top + chartHeight * ratio}
+              x2={padding.left + chartWidth} 
+              y2={padding.top + chartHeight * ratio}
+              stroke="#e5e7eb" 
+              strokeWidth="1"
+            />
+          ))}
+          
+          {data.map((d, i) => {
+            const value = d[config.primaryYAxis[0].id] || 0;
+            const barHeight = (value / maxValue) * chartHeight;
+            const x = padding.left + (i * chartWidth) / data.length;
+            const y = padding.top + chartHeight - barHeight;
+            
+            return (
+              <g key={i}>
+                <rect
+                  x={x}
+                  y={y}
+                  width={barWidth}
+                  height={barHeight}
+                  fill={colorPalette[0]}
+                  opacity="0.8"
+                  stroke="white"
+                  strokeWidth="1"
+                />
+                <text
+                  x={x + barWidth / 2}
+                  y={padding.top + chartHeight + 20}
+                  textAnchor="middle"
+                  fontSize="10"
+                  fill="#374151"
+                >
+                  {d.category}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      );
+    }
+    
+    // Polar Chart
+    if (chartType === 'polar') {
+      const cx = 200;
+      const cy = 200;
+      const maxRadius = 150;
+      const numSegments = data.length;
+      const angleStep = (2 * Math.PI) / numSegments;
+      
+      const maxValue = Math.max(...data.map(d => d[config.primaryYAxis[0].id] || 0));
+      
+      return (
+        <svg width="100%" height="100%" viewBox="0 0 400 400" preserveAspectRatio="xMidYMid meet">
+          {/* Grid circles */}
+          {[0.25, 0.5, 0.75, 1].map((ratio, i) => (
+            <circle
+              key={i}
+              cx={cx}
+              cy={cy}
+              r={maxRadius * ratio}
+              fill="none"
+              stroke="#e5e7eb"
+              strokeWidth="1"
+            />
+          ))}
+          
+          {/* Polar segments */}
+          {data.map((d, i) => {
+            const value = d[config.primaryYAxis[0].id] || 0;
+            const radius = (value / maxValue) * maxRadius;
+            const startAngle = i * angleStep;
+            const endAngle = (i + 1) * angleStep;
+            
+            const x1 = cx + radius * Math.cos(startAngle);
+            const y1 = cy + radius * Math.sin(startAngle);
+            const x2 = cx + radius * Math.cos(endAngle);
+            const y2 = cy + radius * Math.sin(endAngle);
+            
+            const largeArc = angleStep > Math.PI ? 1 : 0;
+            
+            return (
+              <g key={i}>
+                <path
+                  d={`M ${cx} ${cy} L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2} Z`}
+                  fill={colorPalette[i % colorPalette.length]}
+                  opacity="0.7"
+                  stroke="white"
+                  strokeWidth="2"
+                />
+                {/* Axis lines */}
+                <line
+                  x1={cx}
+                  y1={cy}
+                  x2={cx + maxRadius * Math.cos(startAngle)}
+                  y2={cy + maxRadius * Math.sin(startAngle)}
+                  stroke="#cbd5e1"
+                  strokeWidth="1"
+                />
+              </g>
+            );
+          })}
+        </svg>
+      );
+    }
+    
+    // Sankey, Network, and Candlestick require more complex data structures
+    // Providing simplified placeholder implementations
+    if (chartType === 'sankey' || chartType === 'network' || chartType === 'candlestick') {
+      return (
+        <div className="chart-placeholder">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2">
+            {chartType === 'sankey' && (
+              <>
+                <path d="M2,5 Q10,5 10,12 Q10,19 18,19" fill="none" strokeWidth="3" opacity="0.5"/>
+                <path d="M2,10 Q10,10 10,15 Q10,20 18,20" fill="none" strokeWidth="2" opacity="0.4"/>
+              </>
+            )}
+            {chartType === 'network' && (
+              <>
+                <circle cx="12" cy="5" r="2"/>
+                <circle cx="5" cy="15" r="2"/>
+                <circle cx="19" cy="15" r="2"/>
+                <line x1="12" y1="7" x2="7" y2="13"/>
+                <line x1="12" y1="7" x2="17" y2="13"/>
+                <line x1="7" y1="15" x2="17" y2="15"/>
+              </>
+            )}
+            {chartType === 'candlestick' && (
+              <>
+                <line x1="6" y1="4" x2="6" y2="20" strokeWidth="1"/>
+                <rect x="5" y="8" width="2" height="8" fill="currentColor"/>
+                <line x1="12" y1="6" x2="12" y2="18" strokeWidth="1"/>
+                <rect x="11" y="10" width="2" height="5" fill="none" stroke="currentColor"/>
+                <line x1="18" y1="5" x2="18" y2="17" strokeWidth="1"/>
+                <rect x="17" y="9" width="2" height="6" fill="currentColor"/>
+              </>
+            )}
+          </svg>
+          <p>{chartTypes.find(c => c.id === chartType)?.name}</p>
+          <small>Requires specialized data structure</small>
+        </div>
       );
     }
     
@@ -2536,6 +3375,23 @@ const Analytics = () => {
     console.log('🎯 Applying quick graph:', quickGraph);
     console.log('📊 Available fields:', availableFields);
     
+    // Special handling for table charts with columns property
+    if (quickGraph.chartType === 'table' && quickGraph.columns && quickGraph.columns.length > 0) {
+      console.log('🔧 Converting table columns to xAxis/yAxis:', {
+        chartType: quickGraph.chartType,
+        originalColumns: quickGraph.columns,
+        convertedXAxis: quickGraph.columns[0],
+        convertedYAxis: quickGraph.columns.slice(1)
+      });
+      // Convert columns to xAxis (first column) and primaryYAxis (remaining columns)
+      const tableGraph = {
+        ...quickGraph,
+        xAxis: quickGraph.columns[0],
+        yAxis: quickGraph.columns.slice(1)
+      };
+      quickGraph = tableGraph;
+    }
+    
     // Helper function to find field by multiple criteria
     const findField = (fieldId, fieldsList) => {
       if (!fieldId || !fieldsList) return null;
@@ -2609,10 +3465,46 @@ const Analytics = () => {
       }
     }
     
+    // Find or create Size field (for bubble/scatter charts)
+    let sizeField = null;
+    if (quickGraph.size) {
+      sizeField = findField(quickGraph.size, availableFields.measures) ||
+                  findField(quickGraph.size, availableFields.dimensions);
+      
+      if (!sizeField) {
+        sizeField = createDynamicField(quickGraph.size, true);
+      }
+    }
+    
+    // Find or create Color field (for scatter charts)
+    let colorField = null;
+    if (quickGraph.color) {
+      colorField = findField(quickGraph.color, availableFields.measures) ||
+                   findField(quickGraph.color, availableFields.dimensions);
+      
+      if (!colorField) {
+        colorField = createDynamicField(quickGraph.color, true);
+      }
+    }
+    
     console.log('✅ Mapped fields:', {
       xAxis: xAxisField,
       yAxis: yAxisFields,
-      legend: legendField
+      legend: legendField,
+      size: sizeField,
+      color: colorField
+    });
+    
+    console.log('🎯 Final quick graph configuration:', {
+      chartType: quickGraph.chartType,
+      quickGraphId: quickGraph.id,
+      xAxisField: xAxisField?.name,
+      yAxisFields: yAxisFields.map(f => f.name),
+      legendField: legendField?.name,
+      sizeField: sizeField?.name,
+      colorField: colorField?.name,
+      limit: quickGraph.limit,
+      columns: quickGraph.columns
     });
     
     // Task 2: Populate the configuration with x-axis, y-axis, and other settings
@@ -2625,6 +3517,10 @@ const Analytics = () => {
         aggregation: quickGraph.aggregation || (f.aggregation ? f.aggregation[0] : 'avg')
       })),
       legend: legendField,
+      size: sizeField,
+      color: colorField,
+      limit: quickGraph.limit,
+      columns: quickGraph.columns,
       dataSource: selectedDatabase,
       showDataLabels: false,
       showGridLines: true

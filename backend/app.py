@@ -26,26 +26,15 @@ def health_check():
 
 @app.route('/grid-data/buses', methods=['GET'])
 def get_buses():
-    """Get all bus data with coordinates"""
+    """Get all bus data with coordinates and ALL columns for analytics"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Query buses with valid coordinates
+        # Query ALL columns from buses table to support all analytics queries
+        # This ensures headroom fields, forecast fields, etc. are available
         query = """
-            SELECT 
-                bus_id,
-                bus_name,
-                nominal_voltage as base_kv,
-                zone,
-                latitude,
-                longitude,
-                county,
-                state,
-                historical_average_lmp_2022 as lmp_2022,
-                historical_average_lmp_2023 as lmp_2023,
-                historical_average_lmp_2024 as lmp_2024,
-                historical_average_lmp_2025 as lmp_2025
+            SELECT *
             FROM buses
             WHERE latitude IS NOT NULL 
             AND longitude IS NOT NULL
