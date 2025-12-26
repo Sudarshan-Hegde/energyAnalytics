@@ -403,10 +403,11 @@ const Analytics = () => {
       return value;
     };
     
-    // For scatter plots, table charts, and bar charts with unique identifiers (bus_name, bus_id), return raw data without aggregation
+    // For scatter plots, box plots, table charts, and bar charts with unique identifiers (bus_name, bus_id), return raw data without aggregation
     const uniqueIdentifiers = ['bus_name', 'bus_id', 'substation_name'];
     const isUniqueXAxis = uniqueIdentifiers.includes(config.xAxis.id);
     const shouldReturnRawData = config.chartType === 'scatter' || 
+                                config.chartType === 'box-plot' || 
                                 config.chartType === 'table' || 
                                 config.chartType === 'bubble' ||
                                 (config.chartType === 'bar' && isUniqueXAxis);
@@ -438,13 +439,20 @@ const Analytics = () => {
         });
         // Add any additional fields that might be used for color, size, etc.
         if (config.legend) {
-          dataPoint[config.legend] = getValue(row, config.legend);
+          const legendFieldId = typeof config.legend === 'string' ? config.legend : (config.legend?.id || config.legend?.name);
+          if (legendFieldId) dataPoint[legendFieldId] = getValue(row, legendFieldId);
         }
         if (config.color) {
-          dataPoint[config.color] = getValue(row, config.color);
+          const colorFieldId = typeof config.color === 'string' ? config.color : (config.color?.id || config.color?.name);
+          if (colorFieldId) dataPoint[colorFieldId] = getValue(row, colorFieldId);
         }
         if (config.size) {
-          dataPoint[config.size] = getValue(row, config.size);
+          const sizeFieldId = typeof config.size === 'string' ? config.size : (config.size?.id || config.size?.name);
+          if (sizeFieldId) dataPoint[sizeFieldId] = getValue(row, sizeFieldId);
+        }
+        // ALWAYS add 'zone' field for scatter plots (common color field)
+        if (config.chartType === 'scatter' && row.zone) {
+          dataPoint.zone = row.zone;
         }
         // Add category for display (use x-axis value or bus_name)
         dataPoint.category = row.bus_name || xVal || 'Unknown';
@@ -726,6 +734,19 @@ const Analytics = () => {
               String(val).toLowerCase().includes(config._highlightValue.toLowerCase())
             );
             
+            // Get color based on legend field
+            const zoneColors = {
+              'CT': '#3b82f6',
+              'ISO-NE': '#06b6d4',
+              'MA': '#ef4444',
+              'ME': '#10b981',
+              'NH': '#14b8a6',
+              'RI': '#f59e0b',
+              'VT': '#f97316'
+            };
+            const legendValue = config.legend ? d[config.legend] : null;
+            const barColor = legendValue ? (zoneColors[legendValue] || colorPalette[i % colorPalette.length]) : colorPalette[i % colorPalette.length];
+            
             return (
               <g key={i}>
                 {config.primaryYAxis.map((field, j) => {
@@ -741,7 +762,7 @@ const Analytics = () => {
                         y={y}
                         width={barWidth * 0.8}
                         height={barHeight}
-                        fill={isHighlighted ? "#ef4444" : colorPalette[j % colorPalette.length]}
+                        fill={isHighlighted ? "#ef4444" : barColor}
                         rx="2"
                         opacity={isHighlighted ? "1" : hasFilter ? "0.4" : "1"}
                         stroke={isHighlighted ? "#fca5a5" : "none"}
@@ -787,6 +808,66 @@ const Analytics = () => {
           <text x={20} y={padding.top + chartHeight / 2} textAnchor="middle" fontSize="12" fill="#1f2937" fontWeight="600" transform={`rotate(-90 20 ${padding.top + chartHeight / 2})`}>
             {config.primaryYAxis[0].name}
           </text>
+          
+          {/* Legend */}
+          {config.legend && (() => {
+            const colorField = typeof config.legend === 'string' ? config.legend : config.legend.id;
+            if (!colorField || !data.length) return null;
+            
+            const legendCategories = [...new Set(data.map(d => d[colorField]))].filter(Boolean);
+            if (legendCategories.length === 0) return null;
+            
+            const zoneColors = {
+              'CT': '#3b82f6',
+              'ISO-NE': '#06b6d4',
+              'MA': '#ef4444',
+              'ME': '#10b981',
+              'NH': '#14b8a6',
+              'RI': '#f59e0b',
+              'VT': '#f97316'
+            };
+            const isNumericLegend = !isNaN(parseFloat(legendCategories[0]));
+            const fieldLabel = typeof colorField === 'string' ? colorField.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : 'Legend';
+            
+            if (isNumericLegend) {
+              // Gradient legend for numeric values
+              const minVal = Math.min(...legendCategories.map(c => parseFloat(c)));
+              const maxVal = Math.max(...legendCategories.map(c => parseFloat(c)));
+              
+              return (
+                <g transform={`translate(${padding.left + chartWidth + 20}, ${padding.top})`}>
+                  <text x="0" y="0" fontSize="11" fill="#1f2937" fontWeight="600">
+                    {fieldLabel}
+                  </text>
+                  <defs>
+                    <linearGradient id={`bar-legend-gradient-${config.id}`} x1="0%" y1="0%" x2="0%" y2="100%">
+                      <stop offset="0%" stopColor="#10b981" />
+                      <stop offset="50%" stopColor="#f59e0b" />
+                      <stop offset="100%" stopColor="#ef4444" />
+                    </linearGradient>
+                  </defs>
+                  <rect x="0" y="10" width="20" height="100" fill={`url(#bar-legend-gradient-${config.id})`} stroke="#d1d5db" strokeWidth="1" rx="2" />
+                  <text x="25" y="15" fontSize="10" fill="#6b7280">{maxVal.toFixed(2)}</text>
+                  <text x="25" y="115" fontSize="10" fill="#6b7280">{minVal.toFixed(2)}</text>
+                </g>
+              );
+            } else {
+              // Categorical legend for zone colors
+              return (
+                <g transform={`translate(${padding.left + chartWidth + 20}, ${padding.top})`}>
+                  <text x="0" y="0" fontSize="11" fill="#1f2937" fontWeight="600">
+                    {fieldLabel}
+                  </text>
+                  {legendCategories.map((category, i) => (
+                    <g key={category} transform={`translate(0, ${15 + i * 25})`}>
+                      <circle cx="10" cy="10" r="6" fill={zoneColors[category] || colorPalette[i % colorPalette.length]} />
+                      <text x="25" y="15" fontSize="11" fill="#374151">{category}</text>
+                    </g>
+                  ))}
+                </g>
+              );
+            }
+          })()}
         </svg>
       );
     }
@@ -1190,8 +1271,8 @@ const Analytics = () => {
       );
     }
     
-    // Scatter Chart
-    if (chartType === 'scatter') {
+    // Scatter Chart - OLD VERSION (DISABLED - using enhanced version below with legends)
+    if (false && chartType === 'scatter') {
       // Calculate x and y ranges separately for scatter plots
       const xValues = data.map(d => getValue(d, config.xAxis.id) || 0).filter(v => typeof v === 'number' && !isNaN(v));
       const yValues = data.flatMap(d => 
@@ -2200,11 +2281,22 @@ const Analytics = () => {
       );
     }
     
-    // Scatter Chart
+    // Scatter Chart - ENHANCED with color and size legends
     if (chartType === 'scatter') {
-      const xValues = data.map(d => parseFloat(d[config.xAxis.id]) || 0);
+      console.log('🎯 SCATTER PLOT RENDERING STARTED', { 
+        chartType, 
+        dataLength: data.length,
+        config: config,
+        sampleData: data[0]
+      });
+      
+      // Extract field IDs - handle both string and object formats
+      const xAxisFieldId = typeof config.xAxis === 'string' ? config.xAxis : (config.xAxis?.id || config.xAxis?.name);
+      const yAxisFieldIds = config.primaryYAxis.map(f => typeof f === 'string' ? f : (f?.id || f?.name));
+      
+      const xValues = data.map(d => parseFloat(d[xAxisFieldId]) || 0).filter(v => !isNaN(v));
       const yValues = data.flatMap(d => 
-        config.primaryYAxis.map(f => parseFloat(d[f.id]) || 0)
+        yAxisFieldIds.map(fieldId => parseFloat(d[fieldId]) || 0).filter(v => !isNaN(v))
       );
       
       const minX = Math.min(...xValues);
@@ -2212,30 +2304,125 @@ const Analytics = () => {
       const minY = Math.min(...yValues);
       const maxY = Math.max(...yValues);
       
-      console.log('Scatter plot data:', { 
-        dataPoints: data.length, 
-        xRange: [minX, maxX], 
-        yRange: [minY, maxY],
-        samplePoint: data[0]
-      });
-      
       // Handle edge case where all values are the same
       const xRange = maxX - minX || 1;
       const yRange = maxY - minY || 1;
       
       const chartHeight = 200;
-      const chartWidth = 450;
-      const padding = { top: 20, right: 40, bottom: 50, left: 60 };
+      const chartWidth = 380; // Reduced to make room for legends
+      const padding = { top: 20, right: 140, bottom: 60, left: 60 }; // Increased right padding for legends
       
-      // Check if we have filtered data for comparison/highlighting
-      const hasFilter = config._highlightValue && config._originalData;
-      const originalData = config._originalData || data;
+      // Get color field (legend or color) - handle both string and object
+      const colorFieldRaw = config.legend || config.color || 'zone';
+      const colorField = typeof colorFieldRaw === 'string' ? colorFieldRaw : (colorFieldRaw?.id || colorFieldRaw?.name || 'zone');
+      
+      // Get size field - handle both string and object
+      const sizeFieldRaw = config.size;
+      const sizeField = sizeFieldRaw ? (typeof sizeFieldRaw === 'string' ? sizeFieldRaw : (sizeFieldRaw?.id || sizeFieldRaw?.name)) : null;
+      
+      console.log('🎨 Scatter plot field extraction:', {
+        legendConfig: config.legend,
+        colorConfig: config.color,
+        sizeConfig: config.size,
+        colorField,
+        sizeField,
+        sampleDataKeys: data.length > 0 ? Object.keys(data[0]) : [],
+        sampleDataColorValue: data.length > 0 ? data[0][colorField] : null,
+        sampleDataSizeValue: sizeField && data.length > 0 ? data[0][sizeField] : null
+      });
+      
+      // Detect if color field is numeric (gradient mode) or categorical (zone mode)
+      const colorFieldValues = data.map(d => d[colorField]).filter(v => v != null);
+      const isNumericColor = colorFieldValues.length > 0 && !isNaN(parseFloat(colorFieldValues[0]));
+      
+      let colorCategories = [];
+      let minColorValue = 0, maxColorValue = 1, colorRange = 1;
+      
+      if (isNumericColor) {
+        // Gradient mode - extract numeric values
+        const numericValues = colorFieldValues.map(v => parseFloat(v)).filter(v => !isNaN(v));
+        minColorValue = Math.min(...numericValues);
+        maxColorValue = Math.max(...numericValues);
+        colorRange = maxColorValue - minColorValue || 1;
+      } else {
+        // Categorical mode - extract unique categories
+        colorCategories = [...new Set(colorFieldValues)].filter(Boolean);
+      }
+      
+      // Color palette for zones/categories
+      const zoneColors = {
+        'CT': '#3b82f6',      // Blue
+        'ISO-NE': '#06b6d4',  // Cyan
+        'MA': '#ef4444',      // Red
+        'ME': '#10b981',      // Green
+        'NH': '#14b8a6',      // Teal
+        'RI': '#f59e0b',      // Amber
+        'VT': '#f97316'       // Orange
+      };
+      
+      // Fallback color palette for non-zone categories
+      const fallbackColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
+      
+      // Helper function to generate gradient color (blue scale)
+      const getGradientColor = (value) => {
+        const normalizedValue = (value - minColorValue) / colorRange;
+        // Blue gradient: light blue to dark blue
+        const intensity = Math.round(135 + normalizedValue * 120); // 135 to 255
+        const blueShade = Math.round(255 - normalizedValue * 100); // 255 to 155
+        return `rgb(${intensity}, ${intensity + 20}, ${blueShade})`;
+      };
+      
+      // Process size values if configured
+      let minSize = 3, maxSize = 12;
+      let sizeValues = [];
+      
+      if (sizeField) {
+        sizeValues = data.map(d => parseFloat(d[sizeField]) || 0).filter(v => !isNaN(v) && v > 0);
+        if (sizeValues.length > 0) {
+          const minSizeValue = Math.min(...sizeValues);
+          const maxSizeValue = Math.max(...sizeValues);
+          const sizeRange = maxSizeValue - minSizeValue || 1;
+          
+          // Normalize size calculation
+          data.forEach(d => {
+            const sizeVal = parseFloat(d[sizeField]) || 0;
+            d._normalizedSize = minSize + ((sizeVal - minSizeValue) / sizeRange) * (maxSize - minSize);
+          });
+        }
+      }
+      
+      console.log('🎨 Enhanced scatter plot:', { 
+        dataPoints: data.length, 
+        xRange: [minX, maxX], 
+        yRange: [minY, maxY],
+        colorField,
+        isNumericColor,
+        colorCategories: !isNumericColor ? colorCategories : `Gradient (${minColorValue.toFixed(1)} - ${maxColorValue.toFixed(1)})`,
+        sizeField,
+        hasSizes: sizeField && sizeValues.length > 0,
+        legendMode: isNumericColor ? 'gradient' : 'categorical',
+        firstThreePoints: data.slice(0, 3).map(d => ({
+          colorValue: d[colorField],
+          sizeValue: sizeField ? d[sizeField] : null,
+          normalizedSize: d._normalizedSize
+        }))
+      });
+      
+      // Debug info to display on chart
+      const debugInfo = {
+        colorField: colorField,
+        colorFieldExists: data.length > 0 ? (colorField in data[0]) : false,
+        sizeField: sizeField || 'none',
+        sizeFieldExists: sizeField && data.length > 0 ? (sizeField in data[0]) : false,
+        categoriesCount: colorCategories.length,
+        hasValidColors: colorCategories.length > 0 || isNumericColor
+      };
       
       return (
         <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`} preserveAspectRatio="xMidYMid meet">
-          {/* Grid lines */}
-          {config.showGridLines && [0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
-            <g key={i}>
+          {/* Grid lines - Y-axis */}
+          {[0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
+            <g key={`ygrid-${i}`}>
               <line 
                 x1={padding.left} 
                 y1={padding.top + chartHeight * ratio}
@@ -2243,16 +2430,8 @@ const Analytics = () => {
                 y2={padding.top + chartHeight * ratio}
                 stroke="#e5e7eb" 
                 strokeWidth="1"
+                opacity="0.7"
               />
-              <line 
-                x1={padding.left + chartWidth * ratio} 
-                y1={padding.top}
-                x2={padding.left + chartWidth * ratio} 
-                y2={padding.top + chartHeight}
-                stroke="#e5e7eb" 
-                strokeWidth="1"
-              />
-              {/* Y-axis value labels */}
               <text 
                 x={padding.left - 10} 
                 y={padding.top + chartHeight * ratio + 4}
@@ -2260,76 +2439,159 @@ const Analytics = () => {
                 fontSize="10"
                 fill="#6b7280"
               >
-                {(minY + (maxY - minY) * (1 - ratio)).toFixed(1)}
+                {(minY + yRange * (1 - ratio)).toFixed(1)}
               </text>
-              {/* X-axis value labels */}
+            </g>
+          ))}
+          
+          {/* Grid lines - X-axis */}
+          {[0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
+            <g key={`xgrid-${i}`}>
+              <line 
+                x1={padding.left + chartWidth * ratio}
+                y1={padding.top}
+                x2={padding.left + chartWidth * ratio}
+                y2={padding.top + chartHeight}
+                stroke="#f3f4f6"
+                strokeWidth="1"
+                opacity="0.5"
+              />
               <text 
-                x={padding.left + chartWidth * ratio} 
-                y={padding.top + chartHeight + 20}
+                x={padding.left + chartWidth * ratio}
+                y={padding.top + chartHeight + 15}
                 textAnchor="middle"
                 fontSize="10"
                 fill="#6b7280"
               >
-                {(minX + (maxX - minX) * ratio).toFixed(1)}
+                {(minX + xRange * ratio).toFixed(1)}
               </text>
             </g>
-          ))}\n          {/* Render original data points (dimmed if filter active) */}
-          {hasFilter && originalData.map((d, i) => {
-            const xVal = parseFloat(d[config.xAxis.id]) || 0;
-            const x = padding.left + ((xVal - minX) / xRange) * chartWidth;
-            
-            return config.primaryYAxis.map((field, j) => {
-              const yVal = parseFloat(d[field.id]) || 0;
-              const y = padding.top + chartHeight - ((yVal - minY) / yRange) * chartHeight;
-              
-              return (
-                <circle
-                  key={`orig-${i}-${field.id}`}
-                  cx={x}
-                  cy={y}
-                  r="3"
-                  fill="#cbd5e1"
-                  opacity="0.3"
-                  stroke="none"
-                />
-              );
-            });
-          })}\n          
-          {/* Data points (highlighted if filter matches) */}
+          ))}
+          
+          {/* Data points with color and size */}
           {data.map((d, i) => {
-            const xVal = parseFloat(d[config.xAxis.id]) || 0;
+            const xVal = parseFloat(d[xAxisFieldId]) || 0;
+            const yVal = parseFloat(d[yAxisFieldIds[0]]) || 0;
+            
+            // Skip invalid points
+            if (isNaN(xVal) || isNaN(yVal)) return null;
+            
             const x = padding.left + ((xVal - minX) / xRange) * chartWidth;
+            const y = padding.top + chartHeight - ((yVal - minY) / yRange) * chartHeight;
             
-            // Check if this point matches the filter
-            const isHighlighted = hasFilter && Object.values(d).some(val => 
-              String(val).toLowerCase().includes(config._highlightValue.toLowerCase())
+            // Get color based on mode (gradient or categorical)
+            let color;
+            if (isNumericColor) {
+              const colorValue = parseFloat(d[colorField]) || 0;
+              color = getGradientColor(colorValue);
+            } else {
+              const category = d[colorField];
+              const categoryIndex = colorCategories.indexOf(category);
+              // Use zone color if exists, otherwise use fallback color based on index (default to first color if not found)
+              color = zoneColors[category] || fallbackColors[Math.max(0, categoryIndex) % fallbackColors.length];
+            }
+            
+            // Get size
+            const pointSize = d._normalizedSize || 5;
+            
+            return (
+              <circle
+                key={i}
+                cx={x}
+                cy={y}
+                r={pointSize}
+                fill={color}
+                opacity="0.7"
+                stroke="white"
+                strokeWidth="1"
+              />
             );
-            
-            return config.primaryYAxis.map((field, j) => {
-              const yVal = parseFloat(d[field.id]) || 0;
-              const y = padding.top + chartHeight - ((yVal - minY) / yRange) * chartHeight;
-              
-              return (
-                <circle
-                  key={`${i}-${field.id}`}
-                  cx={x}
-                  cy={y}
-                  r={isHighlighted ? "6" : "4"}
-                  fill={isHighlighted ? "#ef4444" : colorPalette[j % colorPalette.length]}
-                  opacity={isHighlighted ? "1" : "0.7"}
-                  stroke={isHighlighted ? "#fca5a5" : "white"}
-                  strokeWidth={isHighlighted ? "2.5" : "1.5"}
-                />
-              );
-            });
           })}
           
+          {/* Color Legend */}
+          <g transform={`translate(${padding.left + chartWidth + 20}, ${padding.top})`}>
+            <text x="0" y="0" fontSize="11" fill="#1f2937" fontWeight="600">
+              {typeof colorField === 'string' ? colorField.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : 'Color'}
+            </text>
+            
+            {/* Debug Info */}
+            {!debugInfo.hasValidColors && (
+              <g transform="translate(0, 20)">
+                <text x="0" y="0" fontSize="9" fill="#ef4444" fontWeight="600">⚠️ No Color Data</text>
+                <text x="0" y="12" fontSize="8" fill="#6b7280">Field: {debugInfo.colorField}</text>
+                <text x="0" y="22" fontSize="8" fill="#6b7280">Exists: {debugInfo.colorFieldExists ? 'Yes' : 'No'}</text>
+              </g>
+            )}
+            
+            {/* Categorical Legend (Zone colors) */}
+            {!isNumericColor && colorCategories.slice(0, 7).map((category, i) => {
+              const color = zoneColors[category] || fallbackColors[i % fallbackColors.length];
+              return (
+                <g key={i} transform={`translate(0, ${15 + i * 18})`}>
+                  <circle cx="6" cy="6" r="5" fill={color} opacity="0.7" stroke="white" strokeWidth="1"/>
+                  <text x="16" y="10" fontSize="9" fill="#374151">
+                    {String(category).length > 10 ? String(category).substring(0, 8) + '...' : category}
+                  </text>
+                </g>
+              );
+            })}
+            
+            {/* Gradient Legend (Numeric scale) */}
+            {isNumericColor && [0, 0.2, 0.4, 0.6, 0.8, 1.0].map((ratio, i) => {
+              const value = minColorValue + colorRange * ratio;
+              const color = getGradientColor(value);
+              return (
+                <g key={i} transform={`translate(0, ${15 + i * 18})`}>
+                  <circle cx="6" cy="6" r="5" fill={color} opacity="0.7" stroke="white" strokeWidth="1"/>
+                  <text x="16" y="10" fontSize="9" fill="#374151">
+                    {value.toFixed(1)}
+                  </text>
+                </g>
+              );
+            })}
+          </g>
+          
+          {/* Size Legend (if size field configured) */}
+          {sizeField && sizeValues.length > 0 && (
+            <g transform={`translate(${padding.left + chartWidth + 20}, ${padding.top + (isNumericColor ? 130 : Math.min(140, 15 + colorCategories.length * 18 + 20))})`}>
+              <text x="0" y="0" fontSize="11" fill="#1f2937" fontWeight="600">
+                {typeof sizeField === 'string' ? sizeField.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : 'Size'}
+              </text>
+              {[0, 0.2, 0.4, 0.6, 0.8, 1.0].map((ratio, i) => {
+                const size = minSize + (maxSize - minSize) * ratio;
+                const value = Math.min(...sizeValues) + (Math.max(...sizeValues) - Math.min(...sizeValues)) * ratio;
+                return (
+                  <g key={i} transform={`translate(0, ${15 + i * 15})`}>
+                    <circle cx="8" cy="6" r={size} fill="#94a3b8" opacity="0.6" stroke="white" strokeWidth="1"/>
+                    <text x="20" y="10" fontSize="8" fill="#6b7280">
+                      {value.toFixed(1)}
+                    </text>
+                  </g>
+                );
+              })}
+            </g>
+          )}
+          
+          {/* Debug: Size field not configured */}
+          {!sizeField && (
+            <g transform={`translate(${padding.left + chartWidth + 20}, ${padding.top + (isNumericColor ? 130 : Math.min(140, 15 + colorCategories.length * 18 + 20))})`}>
+              <text x="0" y="0" fontSize="9" fill="#6b7280">Size: {debugInfo.sizeField}</text>
+              <text x="0" y="12" fontSize="8" fill="#9ca3af">Not configured</text>
+            </g>
+          )}
+          
           {/* Axis labels */}
-          <text x={padding.left + chartWidth / 2} y={padding.top + chartHeight + 35} textAnchor="middle" fontSize="12" fill="#1f2937" fontWeight="600">
-            {config.xAxis.name}
+          <text x={padding.left + chartWidth / 2} y={padding.top + chartHeight + 55} textAnchor="middle" fontSize="12" fill="#1f2937" fontWeight="600">
+            {typeof config.xAxis === 'string' ? config.xAxis.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : (config.xAxis?.name || 'X Axis')}
           </text>
           <text x={20} y={padding.top + chartHeight / 2} textAnchor="middle" fontSize="12" fill="#1f2937" fontWeight="600" transform={`rotate(-90 20 ${padding.top + chartHeight / 2})`}>
-            {config.primaryYAxis[0].name}
+            {(() => {
+              const firstYAxis = config.primaryYAxis[0];
+              if (typeof firstYAxis === 'string') {
+                return firstYAxis.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+              }
+              return firstYAxis?.name || 'Y Axis';
+            })()}
           </text>
         </svg>
       );
@@ -2791,54 +3053,193 @@ const Analytics = () => {
       );
     }
     
-    // Box Plot Chart
+    // Box Plot Chart - FIXED RENDERING LOGIC
     if (chartType === 'box-plot') {
       const chartHeight = 200;
       const chartWidth = 450;
-      const padding = { top: 20, right: 40, bottom: 40, left: 50 };
-      const boxWidth = (chartWidth / data.length) * 0.6;
+      const padding = { top: 20, right: 40, bottom: 60, left: 60 };
       
-      // For each category, calculate quartiles from primaryYAxis values
-      const boxData = data.map(d => {
-        const values = config.primaryYAxis
-          .map(f => d[f.id] || 0)
-          .filter(v => v !== null && v !== undefined)
-          .sort((a, b) => a - b);
+      // Helper to extract numeric value
+      const getNumericValue = (row, fieldId) => {
+        let value = row[fieldId];
+        if (typeof value === 'string' && !isNaN(parseFloat(value))) {
+          value = parseFloat(value);
+        }
+        return typeof value === 'number' && !isNaN(value) && isFinite(value) ? value : null;
+      };
+      
+      // Extract field IDs - handle both string and object formats
+      const xAxisFieldId = typeof config.xAxis === 'string' ? config.xAxis : (config.xAxis?.id || config.xAxis?.name || 'zone');
+      const yAxisFieldIds = config.primaryYAxis.map(f => typeof f === 'string' ? f : (f?.id || f?.name));
+      
+      // Group data by x-axis categories (e.g., zones)
+      const categories = [...new Set(data.map(d => d[xAxisFieldId]))].filter(Boolean);
+      
+      console.log('📦 Box plot debug:', {
+        categories,
+        totalRows: data.length,
+        xAxisField: xAxisFieldId,
+        yAxisFields: yAxisFieldIds,
+        configXAxis: config.xAxis,
+        sampleData: data.slice(0, 3)
+      });
+      console.log('🔑 FIRST ROW KEYS:', data[0] ? Object.keys(data[0]) : []);
+      console.log('📄 FIRST ROW DATA:', data[0]);
+      console.log('🎯 X-VALUES EXTRACTED:', data.map(d => d[xAxisFieldId]));
+      
+      // For each category, collect all Y-axis values
+      const boxData = categories.map(category => {
+        const categoryData = data.filter(d => d[xAxisFieldId] === category);
         
-        if (values.length === 0) return null;
+        // Collect all Y values from all Y-axis fields for this category
+        const values = categoryData.flatMap(d => 
+          yAxisFieldIds.map(fieldId => getNumericValue(d, fieldId))
+        ).filter(v => v !== null).sort((a, b) => a - b);
         
-        const q1 = values[Math.floor(values.length * 0.25)];
-        const median = values[Math.floor(values.length * 0.5)];
-        const q3 = values[Math.floor(values.length * 0.75)];
-        const min = values[0];
-        const max = values[values.length - 1];
+        if (values.length === 0) {
+          console.warn(`⚠️ No values for category: ${category}`);
+          return null;
+        }
         
-        return { category: d.category, min, q1, median, q3, max };
+        // Calculate quartiles with edge case handling
+        const n = values.length;
+        const q1Index = Math.max(0, Math.floor(n * 0.25));
+        const q2Index = Math.max(0, Math.floor(n * 0.50));
+        const q3Index = Math.max(0, Math.floor(n * 0.75));
+        
+        const q1 = values[q1Index] || values[0];
+        const median = values[q2Index] || values[0];
+        const q3 = values[q3Index] || values[n - 1];
+        const iqr = q3 - q1;
+        
+        // Calculate whiskers (1.5 * IQR rule)
+        const lowerWhisker = Math.max(values[0], q1 - 1.5 * iqr);
+        const upperWhisker = Math.min(values[n - 1], q3 + 1.5 * iqr);
+        
+        // Find outliers
+        const outliers = values.filter(v => v < lowerWhisker || v > upperWhisker);
+        
+        console.log(`📦 Category "${category}":`, {
+          valueCount: n,
+          min: values[0],
+          q1,
+          median,
+          q3,
+          max: values[n - 1],
+          iqr,
+          outlierCount: outliers.length
+        });
+        
+        return { 
+          category, 
+          min: lowerWhisker, 
+          q1, 
+          median, 
+          q3, 
+          max: upperWhisker,
+          outliers,
+          count: n
+        };
       }).filter(Boolean);
       
-      const maxValue = Math.max(...boxData.map(d => d.max));
+      if (boxData.length === 0) {
+        console.error('❌ No valid box plot data');
+        return (
+          <div className="panel-placeholder">
+            <p>No data available for box plot</p>
+          </div>
+        );
+      }
+      
+      // Calculate global min/max safely
+      const allValues = boxData.flatMap(d => [d.min, d.q1, d.median, d.q3, d.max, ...d.outliers]).filter(v => v !== null && !isNaN(v) && isFinite(v));
+      const globalMin = Math.min(...allValues);
+      const globalMax = Math.max(...allValues);
+      const valueRange = globalMax - globalMin || 1;
+      
+      console.log('📦 Global stats:', { globalMin, globalMax, valueRange });
+      
+      const boxWidth = Math.min(60, (chartWidth / boxData.length) * 0.6);
       
       return (
         <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`} preserveAspectRatio="xMidYMid meet">
+          {/* Grid lines - Y-axis */}
+          {[0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
+            <g key={`ygrid-${i}`}>
+              <line 
+                x1={padding.left} 
+                y1={padding.top + chartHeight * ratio}
+                x2={padding.left + chartWidth} 
+                y2={padding.top + chartHeight * ratio}
+                stroke="#e5e7eb" 
+                strokeWidth="1"
+                opacity="0.7"
+              />
+              <text 
+                x={padding.left - 10} 
+                y={padding.top + chartHeight * ratio + 4}
+                textAnchor="end"
+                fontSize="10"
+                fill="#6b7280"
+              >
+                {(globalMin + valueRange * (1 - ratio)).toFixed(1)}
+              </text>
+            </g>
+          ))}
+          
+          {/* Box plots */}
           {boxData.map((d, i) => {
-            const x = padding.left + (i * chartWidth) / boxData.length + ((chartWidth / boxData.length) - boxWidth) / 2;
-            const xCenter = x + boxWidth / 2;
+            const xCenter = padding.left + (i + 0.5) * (chartWidth / boxData.length);
+            const x = xCenter - boxWidth / 2;
             
-            const yMin = padding.top + chartHeight - (d.min / maxValue) * chartHeight;
-            const yQ1 = padding.top + chartHeight - (d.q1 / maxValue) * chartHeight;
-            const yMedian = padding.top + chartHeight - (d.median / maxValue) * chartHeight;
-            const yQ3 = padding.top + chartHeight - (d.q3 / maxValue) * chartHeight;
-            const yMax = padding.top + chartHeight - (d.max / maxValue) * chartHeight;
+            // Calculate Y positions
+            const yMin = padding.top + chartHeight - ((d.min - globalMin) / valueRange) * chartHeight;
+            const yQ1 = padding.top + chartHeight - ((d.q1 - globalMin) / valueRange) * chartHeight;
+            const yMedian = padding.top + chartHeight - ((d.median - globalMin) / valueRange) * chartHeight;
+            const yQ3 = padding.top + chartHeight - ((d.q3 - globalMin) / valueRange) * chartHeight;
+            const yMax = padding.top + chartHeight - ((d.max - globalMin) / valueRange) * chartHeight;
             
             return (
               <g key={i}>
-                {/* Whiskers */}
-                <line x1={xCenter} y1={yMin} x2={xCenter} y2={yQ1} stroke="#3b82f6" strokeWidth="2" />
-                <line x1={xCenter} y1={yQ3} x2={xCenter} y2={yMax} stroke="#3b82f6" strokeWidth="2" />
-                <line x1={x} y1={yMin} x2={x + boxWidth} y2={yMin} stroke="#3b82f6" strokeWidth="2" />
-                <line x1={x} y1={yMax} x2={x + boxWidth} y2={yMax} stroke="#3b82f6" strokeWidth="2" />
+                {/* Lower whisker */}
+                <line 
+                  x1={xCenter} 
+                  y1={yMin} 
+                  x2={xCenter} 
+                  y2={yQ1} 
+                  stroke="#64748b" 
+                  strokeWidth="2"
+                  strokeDasharray="4,2"
+                />
+                <line 
+                  x1={xCenter - 8} 
+                  y1={yMin} 
+                  x2={xCenter + 8} 
+                  y2={yMin} 
+                  stroke="#64748b" 
+                  strokeWidth="2"
+                />
                 
-                {/* Box */}
+                {/* Upper whisker */}
+                <line 
+                  x1={xCenter} 
+                  y1={yQ3} 
+                  x2={xCenter} 
+                  y2={yMax} 
+                  stroke="#64748b" 
+                  strokeWidth="2"
+                  strokeDasharray="4,2"
+                />
+                <line 
+                  x1={xCenter - 8} 
+                  y1={yMax} 
+                  x2={xCenter + 8} 
+                  y2={yMax} 
+                  stroke="#64748b" 
+                  strokeWidth="2"
+                />
+                
+                {/* IQR Box (Q1 to Q3) */}
                 <rect
                   x={x}
                   y={yQ3}
@@ -2846,8 +3247,9 @@ const Analytics = () => {
                   height={yQ1 - yQ3}
                   fill={colorPalette[i % colorPalette.length]}
                   opacity="0.7"
-                  stroke="#3b82f6"
+                  stroke={colorPalette[i % colorPalette.length]}
                   strokeWidth="2"
+                  rx="2"
                 />
                 
                 {/* Median line */}
@@ -2860,18 +3262,63 @@ const Analytics = () => {
                   strokeWidth="3"
                 />
                 
+                {/* Outliers */}
+                {d.outliers.map((outlier, oi) => {
+                  const yOutlier = padding.top + chartHeight - ((outlier - globalMin) / valueRange) * chartHeight;
+                  return (
+                    <circle
+                      key={`outlier-${oi}`}
+                      cx={xCenter}
+                      cy={yOutlier}
+                      r="3"
+                      fill={colorPalette[i % colorPalette.length]}
+                      stroke="white"
+                      strokeWidth="1.5"
+                      opacity="0.8"
+                    />
+                  );
+                })}
+                
+                {/* Category label */}
                 <text
                   x={xCenter}
-                  y={padding.top + chartHeight + 20}
-                  textAnchor="middle"
-                  fontSize="11"
+                  y={padding.top + chartHeight + 15}
+                  textAnchor="end"
+                  fontSize="10"
                   fill="#374151"
+                  fontWeight="500"
+                  transform={`rotate(-45 ${xCenter} ${padding.top + chartHeight + 15})`}
                 >
-                  {d.category}
+                  {String(d.category).length > 12 ? String(d.category).substring(0, 10) + '...' : d.category}
+                </text>
+                
+                {/* Count label (n=X) */}
+                <text
+                  x={xCenter}
+                  y={yMax - 10}
+                  textAnchor="middle"
+                  fontSize="8"
+                  fill="#6b7280"
+                >
+                  n={d.count}
                 </text>
               </g>
             );
           })}
+          
+          {/* Axis labels */}
+          <text x={padding.left + chartWidth / 2} y={padding.top + chartHeight + 55} textAnchor="middle" fontSize="12" fill="#1f2937" fontWeight="600">
+            {typeof config.xAxis === 'string' ? config.xAxis.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : (config.xAxis?.name || 'Category')}
+          </text>
+          <text x={20} y={padding.top + chartHeight / 2} textAnchor="middle" fontSize="12" fill="#1f2937" fontWeight="600" transform={`rotate(-90 20 ${padding.top + chartHeight / 2})`}>
+            {(() => {
+              const firstYAxis = config.primaryYAxis[0];
+              if (typeof firstYAxis === 'string') {
+                return firstYAxis.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+              }
+              return firstYAxis?.name || 'Value';
+            })()}
+          </text>
         </svg>
       );
     }
