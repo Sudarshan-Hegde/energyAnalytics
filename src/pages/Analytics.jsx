@@ -150,7 +150,7 @@ const Analytics = () => {
     sorting: { field: null, order: 'asc' },
     colorScheme: 'default',
     showDataLabels: false,
-    showGridLines: true
+    showGridLines: true // TASK 3: Grid lines enabled by default
   });
   
   // Real database data
@@ -230,78 +230,135 @@ const Analytics = () => {
     setPanels(panelsByTab[activeFuelTab]);
   }, [activeFuelTab, panelsByTab]);
   
-  // Task 3: Preconfigured Graphs Definitions
+  // Task 3: Preconfigured Graphs Definitions (CORRECTED - All fields mapped to econ table)
   const preconfiguredGraphs = {
     solar: [
-      { id: 'S1', name: 'Solar Feasibility Quadrant', chartType: 'scatter', xAxis: 'curtailment_percentage_after_500mw_injection', yAxis: ['5_year_forecast_solarscore'], legend: 'zone', size: 'headroom_capacity_substation_discharging' },
-      { id: 'S2', name: 'Headroom vs Curtailment', chartType: 'scatter', xAxis: 'headroom_capacity_substation_discharging', yAxis: ['curtailment_percentage_after_500mw_injection'], color: '5_year_forecast_solarscore' },
-      { id: 'S3', name: 'Solar Revenue vs Curtailment', chartType: 'scatter', xAxis: '5_year_forecast_solar_capture_lmp', yAxis: ['curtailment_percentage_after_500mw_injection'], legend: 'zone' },
+      // S1 - Solar Feasibility Quadrant: curtailment % vs solar score, sized by headroom
+      { id: 'S1', name: 'Solar Feasibility Quadrant', chartType: 'scatter', xAxis: 'curtailment_with_500_mw', yAxis: ['5_year_forecast_solarscore'], legend: 'zone', size: 'headroom_capacity_substation_discharging' },
+      // S2 - Headroom vs Curtailment, colored by solar score
+      { id: 'S2', name: 'Headroom vs Curtailment', chartType: 'scatter', xAxis: 'headroom_capacity_substation_discharging', yAxis: ['curtailment_with_500_mw'], color: '5_year_forecast_solarscore' },
+      // S3 - Solar Revenue Proxy vs Curtailment, by zone
+      { id: 'S3', name: 'Solar Revenue vs Curtailment', chartType: 'scatter', xAxis: '5_year_forecast_solar_capture_lmp', yAxis: ['curtailment_with_500_mw'], legend: 'zone' },
+      // S4 - Solar Revenue Proxy vs Basis
       { id: 'S4', name: 'Solar Revenue vs Basis', chartType: 'scatter', xAxis: '5_year_forecast_basis_vs_hub_base_case', yAxis: ['5_year_forecast_solar_capture_lmp'] },
-      { id: 'S5', name: 'Curtailment Risk vs Congestion', chartType: 'scatter', xAxis: 'curtailment_percentage_after_500mw_injection', yAxis: ['5_year_forecast_pct_hours_congested'] },
+      // S5 - Curtailment Risk vs Congestion Activity
+      { id: 'S5', name: 'Curtailment Risk vs Congestion', chartType: 'scatter', xAxis: 'curtailment_with_500_mw', yAxis: ['5_year_forecast_pct_hours_congested'] },
+      // S6 - SolarScore Distribution by Zone (boxplot)
       { id: 'S6', name: 'SolarScore by Zone', chartType: 'box-plot', xAxis: 'zone', yAxis: ['5_year_forecast_solarscore'] },
-      { id: 'S7', name: 'Curtailment by Zone', chartType: 'box-plot', xAxis: 'zone', yAxis: ['curtailment_percentage_after_500mw_injection'] },
+      // S7 - Curtailment Distribution by Zone (boxplot)
+      { id: 'S7', name: 'Curtailment by Zone', chartType: 'box-plot', xAxis: 'zone', yAxis: ['curtailment_with_500_mw'] },
+      // S8 - Top-25 SolarScore Ranking (bar chart)
       { id: 'S8', name: 'Top-25 SolarScore', chartType: 'bar', xAxis: 'bus_name', yAxis: ['5_year_forecast_solarscore'], legend: 'zone', limit: 25 },
-      { id: 'S9', name: 'Headroom Scenarios', chartType: 'bar', xAxis: 'bus_name', yAxis: ['headroom_capacity_substation_discharging', 'headroom_capacity_substation_discharging_1'] },
-      { id: 'S10', name: 'Solar Decision Gate', chartType: 'table', columns: ['bus_name', 'zone', 'state', 'nominal_voltage', '5_year_forecast_solarscore', 'curtailment_percentage_after_500mw_injection', 'headroom_capacity_substation_discharging', '5_year_forecast_basis_vs_hub_base_case', '5_year_forecast_solar_capture_lmp'] }
+      // S9 - Headroom Across Scenarios (BAU, Stressed, I39)
+      { id: 'S9', name: 'Headroom Scenarios', chartType: 'bar', xAxis: 'bus_name', yAxis: ['headroom_capacity_substation_discharging', 'headroom_capacity_substation_discharging_1'], limit: 15 },
+      // S10 - Solar Decision Gate Table
+      { id: 'S10', name: 'Solar Decision Gate', chartType: 'table', columns: ['bus_name', 'zone', 'state', 'nominal_voltage', '5_year_forecast_solarscore', 'curtailment_with_500_mw', 'headroom_capacity_substation_discharging', '5_year_forecast_basis_vs_hub_base_case', '5_year_forecast_solar_capture_lmp'] }
     ],
     wind: [
-      { id: 'W1', name: 'Wind Feasibility Quadrant', chartType: 'scatter', xAxis: 'curtailment_percentage_after_500mw_injection', yAxis: ['5_year_forecast_wind_capture_lmp'], legend: 'zone', size: 'headroom_capacity_substation_discharging' },
-      { id: 'W2', name: 'Wind Revenue vs Curtailment', chartType: 'scatter', xAxis: '5_year_forecast_wind_capture_lmp', yAxis: ['curtailment_percentage_after_500mw_injection'] },
+      // W1 - Wind Feasibility Quadrant: curtailment % vs wind score
+      { id: 'W1', name: 'Wind Feasibility Quadrant', chartType: 'scatter', xAxis: 'curtailment_with_500_mw', yAxis: ['5_year_forecast_wind_capture_lmp'], legend: 'zone', size: 'headroom_capacity_substation_discharging' },
+      // W2 - Wind Revenue Proxy vs Curtailment
+      { id: 'W2', name: 'Wind Revenue vs Curtailment', chartType: 'scatter', xAxis: '5_year_forecast_wind_capture_lmp', yAxis: ['curtailment_with_500_mw'] },
+      // W3 - Wind Revenue Proxy vs Basis
       { id: 'W3', name: 'Wind Revenue vs Basis', chartType: 'scatter', xAxis: '5_year_forecast_basis_vs_hub_base_case', yAxis: ['5_year_forecast_wind_capture_lmp'] },
-      { id: 'W4', name: 'Curtailment Risk vs Congestion', chartType: 'scatter', xAxis: 'curtailment_percentage_after_500mw_injection', yAxis: ['5_year_forecast_pct_hours_congested'], size: 'existing_gen_mw' },
+      // W4 - Curtailment Risk vs Congestion (queue pressure overlay)
+      { id: 'W4', name: 'Curtailment Risk vs Congestion', chartType: 'scatter', xAxis: 'curtailment_with_500_mw', yAxis: ['5_year_forecast_pct_hours_congested'], size: 'existing_gen_mw' },
+      // W5 - WindScore Distribution by Zone
       { id: 'W5', name: 'WindScore by Zone', chartType: 'box-plot', xAxis: 'zone', yAxis: ['5_year_forecast_wind_capture_lmp'] },
-      { id: 'W6', name: 'Curtailment by Zone', chartType: 'box-plot', xAxis: 'zone', yAxis: ['curtailment_percentage_after_500mw_injection'] },
+      // W6 - Curtailment Distribution by Zone
+      { id: 'W6', name: 'Curtailment by Zone', chartType: 'box-plot', xAxis: 'zone', yAxis: ['curtailment_with_500_mw'] },
+      // W7 - Top-25 WindScore Ranking
       { id: 'W7', name: 'Top-25 WindScore', chartType: 'bar', xAxis: 'bus_name', yAxis: ['5_year_forecast_wind_capture_lmp'], legend: 'zone', limit: 25 },
-      { id: 'W8', name: 'Headroom Scenarios', chartType: 'bar', xAxis: 'bus_name', yAxis: ['headroom_capacity_substation_discharging', 'headroom_capacity_substation_discharging_1'] },
-      { id: 'W9', name: 'Wind Decision Gate', chartType: 'table', columns: ['bus_name', 'zone', '5_year_forecast_wind_capture_lmp', 'curtailment_percentage_after_500mw_injection', '5_year_forecast_pct_hours_congested', '5_year_forecast_basis_vs_hub_base_case', 'existing_gen_mw'] }
+      // W8 - Headroom Across Scenarios (Wind candidates)
+      { id: 'W8', name: 'Headroom Scenarios', chartType: 'bar', xAxis: 'bus_name', yAxis: ['headroom_capacity_substation_discharging', 'headroom_capacity_substation_discharging_1'], limit: 15 },
+      // W9 - Wind Decision Gate Table
+      { id: 'W9', name: 'Wind Decision Gate', chartType: 'table', columns: ['bus_name', 'zone', '5_year_forecast_wind_capture_lmp', 'curtailment_with_500_mw', '5_year_forecast_pct_hours_congested', '5_year_forecast_basis_vs_hub_base_case', 'existing_gen_mw'] }
     ],
     storage: [
+      // ST1 - Arbitrage Spread vs Negative Hours (Primary storage graph)
       { id: 'ST1', name: 'Arbitrage Spread vs Negative Hours', chartType: 'scatter', xAxis: '5_year_forecast_tb4_avg', yAxis: ['5_year_forecast_hours_lmp_lt_0'], color: '5_year_forecast_storagescore' },
+      // ST2 - On-peak vs Off-peak LMP (arbitrage spread sizing)
       { id: 'ST2', name: 'On-peak vs Off-peak LMP', chartType: 'scatter', xAxis: '5_year_forecast_avg_lmp_lowest_5pct', yAxis: ['5_year_forecast_avg_lmp_base_case'], size: '5_year_forecast_tb4_avg' },
+      // ST3 - Volatility vs Negative-price Opportunity
       { id: 'ST3', name: 'Volatility vs Negative-price', chartType: 'scatter', xAxis: '5_year_forecast_lmp_stddev', yAxis: ['5_year_forecast_pct_hours_lt_0'] },
+      // ST4 - Negative-price Opportunity vs Congestion
       { id: 'ST4', name: 'Negative-price vs Congestion', chartType: 'scatter', xAxis: '5_year_forecast_pct_hours_lt_0', yAxis: ['5_year_forecast_pct_hours_congested'] },
+      // ST5 - StorageScore vs Arbitrage Spread
       { id: 'ST5', name: 'StorageScore vs Arbitrage', chartType: 'scatter', xAxis: '5_year_forecast_tb4_avg', yAxis: ['5_year_forecast_storagescore'] },
-      { id: 'ST6', name: 'StorageScore vs Curtailment', chartType: 'scatter', xAxis: 'curtailment_percentage_after_500mw_injection', yAxis: ['5_year_forecast_storagescore'], size: 'headroom_capacity_substation_discharging' },
+      // ST6 - StorageScore vs Curtailment (co-location readiness)
+      { id: 'ST6', name: 'StorageScore vs Curtailment', chartType: 'scatter', xAxis: 'curtailment_with_500_mw', yAxis: ['5_year_forecast_storagescore'], size: 'headroom_capacity_substation_discharging' },
+      // ST7 - Basis vs StorageScore
       { id: 'ST7', name: 'Basis vs StorageScore', chartType: 'scatter', xAxis: '5_year_forecast_basis_vs_hub_base_case', yAxis: ['5_year_forecast_storagescore'] },
+      // ST8 - Headroom vs Congestion
       { id: 'ST8', name: 'Headroom vs Congestion', chartType: 'scatter', xAxis: 'headroom_capacity_substation_discharging', yAxis: ['5_year_forecast_pct_hours_congested'] },
+      // ST9 - Arbitrage Spread Distribution by Zone
       { id: 'ST9', name: 'Arbitrage by Zone', chartType: 'box-plot', xAxis: 'zone', yAxis: ['5_year_forecast_tb4_avg'] },
+      // ST10 - Top-25 StorageScore Ranking
       { id: 'ST10', name: 'Top-25 StorageScore', chartType: 'bar', xAxis: 'bus_name', yAxis: ['5_year_forecast_storagescore'], limit: 25 },
+      // ST11 - Storage Decision Gate Table
       { id: 'ST11', name: 'Storage Decision Gate', chartType: 'table', columns: ['bus_name', 'zone', '5_year_forecast_storagescore', '5_year_forecast_tb4_avg', '5_year_forecast_hours_lmp_lt_0', 'headroom_capacity_substation_discharging', '5_year_forecast_lmp_stddev', '5_year_forecast_pct_hours_lt_0', '5_year_forecast_pct_hours_congested'] }
     ],
     datacenter: [
+      // DC1 - Price Stability vs Headroom Robustness (Primary)
       { id: 'DC1', name: 'Price Stability vs Headroom', chartType: 'scatter', xAxis: '5_year_forecast_lmp_stddev', yAxis: ['headroom_capacity_substation_discharging_1'], color: '5_year_forecast_loadscore' },
+      // DC2 - DataCenterScore vs Basis
       { id: 'DC2', name: 'DataCenterScore vs Basis', chartType: 'scatter', xAxis: '5_year_forecast_basis_vs_hub_base_case', yAxis: ['5_year_forecast_loadscore'] },
+      // DC3 - DataCenterScore vs Queue MW Radius
       { id: 'DC3', name: 'DataCenterScore vs Queue MW', chartType: 'scatter', xAxis: 'existing_gen_mw', yAxis: ['5_year_forecast_loadscore'] },
+      // DC4 - Queue Competitiveness vs DataCenterScore
       { id: 'DC4', name: 'Queue Competitiveness', chartType: 'scatter', xAxis: 'existing_gen_capacity_mw', yAxis: ['5_year_forecast_loadscore'] },
+      // DC5 - Congestion vs DataCenterScore (queue overlay)
       { id: 'DC5', name: 'Congestion vs DataCenterScore', chartType: 'scatter', xAxis: '5_year_forecast_pct_hours_congested', yAxis: ['5_year_forecast_loadscore'], size: 'existing_gen_mw' },
+      // DC6 - Expansion Readiness (Scale lens)
       { id: 'DC6', name: 'Expansion Readiness', chartType: 'scatter', xAxis: 'headroom_capacity_substation_discharging', yAxis: ['existing_gen_mw'] },
+      // DC7 - Avg DataCenterScore by Zone
       { id: 'DC7', name: 'Avg DataCenterScore by Zone', chartType: 'bar', xAxis: 'zone', yAxis: ['5_year_forecast_loadscore'], aggregation: 'mean' },
+      // DC8 - Top-25 DataCenterScore Ranking
       { id: 'DC8', name: 'Top-25 DataCenterScore', chartType: 'bar', xAxis: 'bus_name', yAxis: ['5_year_forecast_loadscore'], limit: 25 },
+      // DC9 - Data Center Readiness Gate Table
       { id: 'DC9', name: 'Data Center Readiness Gate', chartType: 'table', columns: ['bus_name', 'zone', '5_year_forecast_loadscore', '5_year_forecast_lmp_stddev', 'headroom_capacity_substation_discharging_1', 'headroom_capacity_substation_discharging', '5_year_forecast_basis_vs_hub_base_case', 'existing_gen_mw'] }
     ]
   };
   
   const lmpGraphs = [
+    // LMP1 - Avg LMP vs Basis
     { id: 'LMP1', name: 'Avg LMP vs Basis', chartType: 'scatter', xAxis: '5_year_forecast_avg_lmp_base_case', yAxis: ['5_year_forecast_basis_vs_hub_base_case'] },
+    // LMP2 - Volatility vs Avg LMP
     { id: 'LMP2', name: 'Volatility vs Avg LMP', chartType: 'scatter', xAxis: '5_year_forecast_avg_lmp_base_case', yAxis: ['5_year_forecast_lmp_stddev'] },
+    // LMP3 - Negative-price Opportunity vs Avg LMP
     { id: 'LMP3', name: 'Negative-price vs Avg LMP', chartType: 'scatter', xAxis: '5_year_forecast_avg_lmp_base_case', yAxis: ['5_year_forecast_pct_hours_lt_0'] },
+    // LMP4 - Hours LMP<0 vs Avg LMP
     { id: 'LMP4', name: 'Hours LMP<0 vs Avg LMP', chartType: 'scatter', xAxis: '5_year_forecast_avg_lmp_base_case', yAxis: ['5_year_forecast_hours_lmp_lt_0'] },
-    { id: 'LMP5', name: 'Congestion vs Basis', chartType: 'scatter', xAxis: '5_year_forecast_pct_hours_congested', yAxis: ['5_year_forecast_basis_vs_hub_base_case'], size: 'curtailment_percentage_after_500mw_injection' },
+    // LMP5 - Congestion vs Basis (Curtailment overlay)
+    { id: 'LMP5', name: 'Congestion vs Basis', chartType: 'scatter', xAxis: '5_year_forecast_pct_hours_congested', yAxis: ['5_year_forecast_basis_vs_hub_base_case'], size: 'curtailment_with_500_mw' },
+    // LMP6 - On-peak vs Off-peak (volatility size)
     { id: 'LMP6', name: 'On-peak vs Off-peak', chartType: 'scatter', xAxis: '5_year_forecast_avg_lmp_lowest_5pct', yAxis: ['5_year_forecast_avg_lmp_base_case'], size: '5_year_forecast_lmp_stddev' },
+    // LMP7 - Avg LMP by Zone
     { id: 'LMP7', name: 'Avg LMP by Zone', chartType: 'bar', xAxis: 'zone', yAxis: ['5_year_forecast_avg_lmp_base_case'], aggregation: 'mean' },
+    // LMP8 - Basis Distribution by Zone
     { id: 'LMP8', name: 'Basis Distribution by Zone', chartType: 'box-plot', xAxis: 'zone', yAxis: ['5_year_forecast_basis_vs_hub_base_case'] },
+    // LMP9 - Merchant Risk Envelope (LMP, volatility, basis)
     { id: 'LMP9', name: 'Merchant Risk Envelope', chartType: 'scatter', xAxis: '5_year_forecast_avg_lmp_base_case', yAxis: ['5_year_forecast_lmp_stddev'], size: '5_year_forecast_basis_vs_hub_base_case', legend: 'zone' }
   ];
   
   const busScoreGraphs = [
-    { id: 'BS1', name: 'Tech Score Comparison', chartType: 'bar', xAxis: 'bus_name', yAxis: ['5_year_forecast_solarscore', '5_year_forecast_wind_capture_lmp', '5_year_forecast_storagescore', '5_year_forecast_loadscore'] },
+    // BS1 - Tech Score Comparison (multi-series bar)
+    { id: 'BS1', name: 'Tech Score Comparison', chartType: 'bar', xAxis: 'bus_name', yAxis: ['5_year_forecast_solarscore', '5_year_forecast_wind_capture_lmp', '5_year_forecast_storagescore', '5_year_forecast_loadscore'], limit: 15 },
+    // BS2 - HybridScore vs SolarScore
     { id: 'BS2', name: 'HybridScore vs SolarScore', chartType: 'scatter', xAxis: '5_year_forecast_solarscore', yAxis: ['5_year_forecast_storagescore'] },
+    // BS3 - HybridScore vs StorageScore
     { id: 'BS3', name: 'HybridScore vs StorageScore', chartType: 'scatter', xAxis: '5_year_forecast_storagescore', yAxis: ['5_year_forecast_solarscore'] },
+    // BS4 - Score vs Headroom Robustness
     { id: 'BS4', name: 'Score vs Headroom Robustness', chartType: 'scatter', xAxis: 'headroom_capacity_substation_discharging_1', yAxis: ['5_year_forecast_solarscore'] },
-    { id: 'BS5', name: 'Score vs Curtailment', chartType: 'scatter', xAxis: 'curtailment_percentage_after_500mw_injection', yAxis: ['5_year_forecast_solarscore'] },
+    // BS5 - Score vs Curtailment
+    { id: 'BS5', name: 'Score vs Curtailment', chartType: 'scatter', xAxis: 'curtailment_with_500_mw', yAxis: ['5_year_forecast_solarscore'] },
+    // BS6 - Score vs Basis
     { id: 'BS6', name: 'Score vs Basis', chartType: 'scatter', xAxis: '5_year_forecast_basis_vs_hub_base_case', yAxis: ['5_year_forecast_solarscore'] },
+    // BS7 - Score vs Upgradeability
     { id: 'BS7', name: 'Score vs Upgradeability', chartType: 'scatter', xAxis: 'headroom_capacity_substation_charging_1', yAxis: ['5_year_forecast_solarscore'] },
+    // BS8 - Composite Score Ranking (top 25 solar scores)
     { id: 'BS8', name: 'Composite Score Ranking', chartType: 'bar', xAxis: 'bus_name', yAxis: ['5_year_forecast_solarscore'], limit: 25 },
+    // BS9 - Go/No-Go Matrix Table
     { id: 'BS9', name: 'Go/No-Go Matrix', chartType: 'table', columns: ['bus_name', 'zone', '5_year_forecast_solarscore', '5_year_forecast_wind_capture_lmp', '5_year_forecast_storagescore', '5_year_forecast_loadscore'] }
   ];
   
@@ -330,47 +387,15 @@ const Analytics = () => {
       return [];
     }
     
-    // Use buses data as the primary source from gridsense_iso_ne.db
+    // Use buses data as the primary source from gridsense_iso_ne.db (which contains econ table data)
     const sourceData = databaseData.buses;
     
-    // Map field IDs to actual database column names
-    const fieldMapping = {
-      // Simplified names to actual database columns
-      'curt_pct_500': 'curtailment_percentage_after_500mw_injection',
-      'solar_score': '5_year_forecast_solarscore',
-      'wind_score': '5_year_forecast_wind_capture_lmp',
-      'storage_score': '5_year_forecast_storagescore',
-      'data_center_score': '5_year_forecast_loadscore',
-      'headroom_bau': 'headroom_capacity_substation_discharging',
-      'headroom_stressed': 'headroom_capacity_substation_discharging_1',
-      'headroom_charging': 'headroom_capacity_substation_charging',
-      'headroom_charging_1': 'headroom_capacity_substation_charging_1',
-      'headroom_robust': 'headroom_capacity_substation_discharging_1',
-      'basis_vs_hub_5yr': '5_year_forecast_basis_vs_hub_base_case',
-      'solar_revenue_proxy': '5_year_forecast_solar_capture_lmp',
-      'wind_revenue_proxy': '5_year_forecast_wind_capture_lmp',
-      'curt_risk_index': 'curtailment_percentage_after_500mw_injection',
-      'pct_hours_congested': '5_year_forecast_pct_hours_congested',
-      'substation_name': 'bus_name',
-      'voltage_kV': 'nominal_voltage',
-      'avg_lmp_5yr': '5_year_forecast_avg_lmp_base_case',
-      'lmp_stddev': '5_year_forecast_lmp_stddev',
-      'hours_lmp_lt_0': '5_year_forecast_hours_lmp_lt_0',
-      'neg_price_opportunity': '5_year_forecast_pct_hours_lt_0',
-      'arbitrage_spread': '5_year_forecast_tb4_avg',
-      'avg_lmp_offpeak': '5_year_forecast_avg_lmp_lowest_5pct',
-      'avg_lmp_onpeak': '5_year_forecast_avg_lmp_base_case',
-      'queue_mw_radius': 'existing_gen_mw',
-      'queue_competitiveness_score': 'existing_gen_capacity_mw',
-      'upgradeability_score': 'headroom_capacity_substation_charging_1',
-      'hybrid_score': '5_year_forecast_storagescore',
-      'composite_score': '5_year_forecast_solarscore'
-    };
+    // Field mapping is no longer needed - we use exact econ table column names
+    // All quick graphs are configured with actual database column names
     
     // Direct property access with type conversion (used for all chart types)
     const getValue = (row, fieldId) => {
-      const mappedId = fieldMapping[fieldId] || fieldId;
-      let value = row[mappedId];
+      let value = row[fieldId];
       // Convert string numbers to actual numbers
       if (typeof value === 'string' && !isNaN(parseFloat(value))) {
         value = parseFloat(value);
@@ -396,17 +421,7 @@ const Analytics = () => {
     });
     
     if (shouldReturnRawData) {
-      // Direct property access with type conversion
-      const getValue = (row, fieldId) => {
-        const mappedId = fieldMapping[fieldId] || fieldId;
-        let value = row[mappedId];
-        // Convert string numbers to actual numbers
-        if (typeof value === 'string' && !isNaN(parseFloat(value))) {
-          value = parseFloat(value);
-        }
-        return value;
-      };
-      
+      // Map data directly from database rows
       const rawData = sourceData.map((row, index) => {
         const dataPoint = {}; 
         // Add x-axis field - if NULL, use bus_name or index as fallback
@@ -461,7 +476,6 @@ const Analytics = () => {
           chartType: config.chartType,
           xAxis: config.xAxis.id,
           yAxis: config.primaryYAxis.map(f => f.id),
-          mappedXAxis: fieldMapping[config.xAxis.id] || config.xAxis.id,
           totalRows: sourceData.length,
           sampleRawData: rawData.slice(0, 3)
         });
@@ -623,6 +637,16 @@ const Analytics = () => {
     
     const colorPalette = colors[config.colorScheme] || colors.default;
     
+    // Helper function to get value from data row
+    const getValue = (row, fieldId) => {
+      let value = row[fieldId];
+      // Convert string numbers to actual numbers
+      if (typeof value === 'string' && !isNaN(parseFloat(value))) {
+        value = parseFloat(value);
+      }
+      return value;
+    };
+    
     // Bar Chart
     if (chartType === 'bar') {
       const maxValue = Math.max(...data.flatMap(d => 
@@ -646,15 +670,19 @@ const Analytics = () => {
       const chartHeight = 200;
       const chartWidth = 450;
       const barWidth = chartWidth / (data.length * config.primaryYAxis.length + data.length + 1);
-      const padding = { top: 20, right: 40, bottom: 40, left: 50 };
+      const padding = { top: 20, right: 40, bottom: 60, left: 60 }; // INCREASED bottom padding for rotated labels
       
       // Check if we have filtered data for comparison/highlighting
       const hasFilter = config._highlightValue;
       
+      // TASK 2: Smart x-axis label sampling based on data density
+      const maxLabelsToShow = 20; // Show max 20 labels
+      const labelInterval = Math.max(1, Math.ceil(data.length / maxLabelsToShow));
+      
       return (
         <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`} preserveAspectRatio="xMidYMid meet">
-          {/* Grid lines */}
-          {config.showGridLines && [0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
+          {/* TASK 3: Grid lines - Y-axis */}
+          {[0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
             <g key={i}>
               <line 
                 x1={padding.left} 
@@ -663,6 +691,7 @@ const Analytics = () => {
                 y2={padding.top + chartHeight * ratio}
                 stroke="#e5e7eb" 
                 strokeWidth="1"
+                opacity="0.7"
               />
               <text 
                 x={padding.left - 10} 
@@ -674,6 +703,20 @@ const Analytics = () => {
                 {Math.round(maxValue * (1 - ratio))}
               </text>
             </g>
+          ))}
+          
+          {/* TASK 3: Grid lines - X-axis vertical lines */}
+          {data.map((d, i) => (
+            <line 
+              key={`xgrid-${i}`}
+              x1={padding.left + (i * (config.primaryYAxis.length * barWidth + barWidth)) + (config.primaryYAxis.length * barWidth) / 2}
+              y1={padding.top}
+              x2={padding.left + (i * (config.primaryYAxis.length * barWidth + barWidth)) + (config.primaryYAxis.length * barWidth) / 2}
+              y2={padding.top + chartHeight}
+              stroke="#f3f4f6"
+              strokeWidth="1"
+              opacity="0.5"
+            />
           ))}
           
           {/* Bars */}
@@ -713,28 +756,32 @@ const Analytics = () => {
                           fill={isHighlighted ? "#dc2626" : "#374151"}
                           fontWeight={isHighlighted ? "700" : "500"}
                         >
-                          {value}
+                          {typeof value === 'number' ? value.toFixed(1) : value}
                         </text>
                       )}
                     </g>
                   );
                 })}
-                <text
-                  x={padding.left + (i * (config.primaryYAxis.length * barWidth + barWidth)) + (config.primaryYAxis.length * barWidth) / 2}
-                  y={padding.top + chartHeight + 20}
-                  textAnchor="middle"
-                  fontSize="11"
-                  fill={isHighlighted ? "#dc2626" : "#374151"}
-                  fontWeight={isHighlighted ? "700" : "400"}
-                >
-                  {d.category}
-                </text>
+                {/* TASK 2: Rotated X-axis labels with smart sampling */}
+                {(i % labelInterval === 0 || i === data.length - 1) && (
+                  <text
+                    x={padding.left + (i * (config.primaryYAxis.length * barWidth + barWidth)) + (config.primaryYAxis.length * barWidth) / 2}
+                    y={padding.top + chartHeight + 15}
+                    textAnchor="end"
+                    fontSize="9"
+                    fill={isHighlighted ? "#dc2626" : "#374151"}
+                    fontWeight={isHighlighted ? "700" : "400"}
+                    transform={`rotate(-45 ${padding.left + (i * (config.primaryYAxis.length * barWidth + barWidth)) + (config.primaryYAxis.length * barWidth) / 2} ${padding.top + chartHeight + 15})`}
+                  >
+                    {String(d.category).length > 25 ? String(d.category).substring(0, 22) + '...' : d.category}
+                  </text>
+                )}
               </g>
             );
           })}
           
           {/* Axis labels */}
-          <text x={padding.left + chartWidth / 2} y={padding.top + chartHeight + 35} textAnchor="middle" fontSize="12" fill="#1f2937" fontWeight="600">
+          <text x={padding.left + chartWidth / 2} y={padding.top + chartHeight + 55} textAnchor="middle" fontSize="12" fill="#1f2937" fontWeight="600">
             {config.xAxis.name}
           </text>
           <text x={20} y={padding.top + chartHeight / 2} textAnchor="middle" fontSize="12" fill="#1f2937" fontWeight="600" transform={`rotate(-90 20 ${padding.top + chartHeight / 2})`}>
@@ -756,8 +803,8 @@ const Analytics = () => {
       
       return (
         <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`} preserveAspectRatio="xMidYMid meet">
-          {/* Grid lines */}
-          {config.showGridLines && [0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
+          {/* TASK 3: Grid lines - Always visible */}
+          {[0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
             <g key={i}>
               <line 
                 x1={padding.left} 
@@ -1145,19 +1192,30 @@ const Analytics = () => {
     
     // Scatter Chart
     if (chartType === 'scatter') {
-      const maxValue = Math.max(...data.flatMap(d => 
-        config.primaryYAxis.map(f => d[f.id] || 0)
-      ));
+      // Calculate x and y ranges separately for scatter plots
+      const xValues = data.map(d => getValue(d, config.xAxis.id) || 0).filter(v => typeof v === 'number' && !isNaN(v));
+      const yValues = data.flatMap(d => 
+        config.primaryYAxis.map(f => getValue(d, f.id) || 0).filter(v => typeof v === 'number' && !isNaN(v))
+      );
+      
+      const minX = Math.min(...xValues);
+      const maxX = Math.max(...xValues);
+      const minY = Math.min(...yValues);
+      const maxY = Math.max(...yValues);
+      
       const chartHeight = 200;
       const chartWidth = 450;
-      const padding = { top: 20, right: 40, bottom: 40, left: 50 };
-      const pointSpacing = chartWidth / (data.length - 1);
+      const padding = { top: 20, right: 40, bottom: 60, left: 60 };
+      
+      // TASK 2: Smart x-axis label sampling
+      const maxLabelsToShow = 15;
+      const labelInterval = Math.max(1, Math.ceil(data.length / maxLabelsToShow));
       
       return (
         <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`} preserveAspectRatio="xMidYMid meet">
-          {/* Grid lines */}
-          {config.showGridLines && [0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
-            <g key={i}>
+          {/* TASK 3: Grid lines - Y-axis */}
+          {[0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
+            <g key={`ygrid-${i}`}>
               <line 
                 x1={padding.left} 
                 y1={padding.top + chartHeight * ratio}
@@ -1165,6 +1223,7 @@ const Analytics = () => {
                 y2={padding.top + chartHeight * ratio}
                 stroke="#e5e7eb" 
                 strokeWidth="1"
+                opacity="0.7"
               />
               <text 
                 x={padding.left - 10} 
@@ -1173,7 +1232,31 @@ const Analytics = () => {
                 fontSize="10"
                 fill="#6b7280"
               >
-                {Math.round(maxValue * (1 - ratio))}
+                {(minY + (maxY - minY) * (1 - ratio)).toFixed(1)}
+              </text>
+            </g>
+          ))}
+          
+          {/* TASK 3: Grid lines - X-axis */}
+          {[0, 0.25, 0.5, 0.75, 1].map((ratio, i) => (
+            <g key={`xgrid-${i}`}>
+              <line 
+                x1={padding.left + chartWidth * ratio}
+                y1={padding.top}
+                x2={padding.left + chartWidth * ratio}
+                y2={padding.top + chartHeight}
+                stroke="#f3f4f6"
+                strokeWidth="1"
+                opacity="0.5"
+              />
+              <text 
+                x={padding.left + chartWidth * ratio}
+                y={padding.top + chartHeight + 15}
+                textAnchor="middle"
+                fontSize="10"
+                fill="#6b7280"
+              >
+                {(minX + (maxX - minX) * ratio).toFixed(1)}
               </text>
             </g>
           ))}
@@ -1182,9 +1265,17 @@ const Analytics = () => {
           {config.primaryYAxis.map((field, j) => (
             <g key={field.id}>
               {data.map((d, i) => {
-                const x = padding.left + i * pointSpacing;
-                const value = d[field.id] || 0;
-                const y = padding.top + chartHeight - (value / maxValue) * chartHeight;
+                const xVal = getValue(d, config.xAxis.id) || 0;
+                const yVal = getValue(d, field.id) || 0;
+                
+                // Skip invalid points
+                if (typeof xVal !== 'number' || typeof yVal !== 'number' || isNaN(xVal) || isNaN(yVal)) {
+                  return null;
+                }
+                
+                const x = padding.left + ((xVal - minX) / (maxX - minX)) * chartWidth;
+                const y = padding.top + chartHeight - ((yVal - minY) / (maxY - minY)) * chartHeight;
+                
                 return (
                   <circle
                     key={i}
@@ -1193,25 +1284,21 @@ const Analytics = () => {
                     r="5"
                     fill={colorPalette[j % colorPalette.length]}
                     opacity="0.7"
+                    stroke="white"
+                    strokeWidth="1"
                   />
                 );
               })}
             </g>
           ))}
           
-          {/* X-axis labels */}
-          {data.map((d, i) => (
-            <text
-              key={i}
-              x={padding.left + i * pointSpacing}
-              y={padding.top + chartHeight + 20}
-              textAnchor="middle"
-              fontSize="11"
-              fill="#374151"
-            >
-              {d.category}
-            </text>
-          ))}
+          {/* Axis labels */}
+          <text x={padding.left + chartWidth / 2} y={padding.top + chartHeight + 55} textAnchor="middle" fontSize="12" fill="#1f2937" fontWeight="600">
+            {config.xAxis.name}
+          </text>
+          <text x={20} y={padding.top + chartHeight / 2} textAnchor="middle" fontSize="12" fill="#1f2937" fontWeight="600" transform={`rotate(-90 20 ${padding.top + chartHeight / 2})`}>
+            {config.primaryYAxis[0].name}
+          </text>
         </svg>
       );
     }

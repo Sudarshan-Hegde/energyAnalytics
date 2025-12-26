@@ -99,10 +99,11 @@
   overflow: hidden;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   transition: box-shadow 0.2s ease;
-  min-width: 150px;
-  min-height: 150px;
+  min-width: 200px; /* TASK 4: Increased from 150px */
+  min-height: 250px; /* TASK 4: Increased from 150px */
   box-sizing: border-box;
   flex-shrink: 0;
+  position: relative; /* TASK 4: For absolute positioning of header */
 }
 
 .dashboard-panel.resizable {
@@ -117,32 +118,54 @@
   opacity: 1;
 }
 
+/* TASK 4: Panel header - hidden by default, visible on hover */
 .panel-header {
-  padding: 16px 20px;
-  background: #f8f9fa;
+  padding: 12px 16px; /* TASK 4: Reduced padding */
+  background: rgba(248, 249, 250, 0.95); /* TASK 4: Semi-transparent */
+  backdrop-filter: blur(10px); /* TASK 4: Blur effect */
   border-bottom: 2px solid #e5e7eb;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  position: absolute; /* TASK 4: Float on hover */
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  opacity: 0; /* TASK 4: Hidden by default */
+  transform: translateY(-100%); /* TASK 4: Slide up */
+  transition: all 0.3s ease; /* TASK 4: Smooth animation */
+  pointer-events: none; /* TASK 4: Don't block clicks when hidden */
+}
+
+/* TASK 4: Show header on panel hover */
+.dashboard-panel:hover .panel-header {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: all;
 }
 
 .panel-header h3 {
-  font-size: 16px;
+  font-size: 14px; /* TASK 4: Reduced from 16px */
   font-weight: 600;
   color: #1f2937;
   margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
 }
 
 /* Panel Header Actions */
 .panel-header-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px; /* TASK 4: Reduced from 8px */
 }
 
 .panel-filter-btn,
 .panel-config-btn {
-  padding: 8px;
+  padding: 6px; /* TASK 4: Reduced from 8px */
   background: #ffffff;
   border: 2px solid #e5e7eb;
   border-radius: 6px;
@@ -151,6 +174,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.panel-filter-btn svg,
+.panel-config-btn svg {
+  width: 16px; /* TASK 4: Ensure consistent icon size */
+  height: 16px;
 }
 
 .panel-filter-btn:hover,
@@ -172,15 +201,18 @@
   pointer-events: none;
 }
 
+/* TASK 4: Panel content - now fills entire panel */
 .panel-content {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  padding: 24px; /* TASK 4: Increased from 20px for more breathing room */
   overflow: hidden;
   background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
   position: relative;
+  width: 100%;
+  height: 100%;
 }
 
 .panel-content svg {
