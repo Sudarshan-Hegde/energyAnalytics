@@ -48,7 +48,7 @@ const Analytics = () => {
   });
   
   // Current active panels based on selected tab
-  const [panels, setPanels] = useState(panelsByTab[activeFuelTab]);
+  const [panels, setPanels] = useState(panelsByTab[activeFuelTab] || [...defaultPanels]);
   
   // Resizable panel state
   const [resizing, setResizing] = useState(null); // { panelId, edge, startX, startY, startWidth, startHeight }
@@ -227,7 +227,16 @@ const Analytics = () => {
   
   // Sync panels when tab changes
   useEffect(() => {
-    setPanels(panelsByTab[activeFuelTab]);
+    // If the tab doesn't have panels yet, initialize with default panels
+    if (!panelsByTab[activeFuelTab]) {
+      setPanelsByTab(prev => ({
+        ...prev,
+        [activeFuelTab]: [...defaultPanels]
+      }));
+      setPanels([...defaultPanels]);
+    } else {
+      setPanels(panelsByTab[activeFuelTab]);
+    }
   }, [activeFuelTab, panelsByTab]);
   
   // Task 3: Preconfigured Graphs Definitions (CORRECTED - All fields mapped to econ table)
@@ -4212,7 +4221,14 @@ const Analytics = () => {
   // Add new fuel type
   const handleAddFuel = () => {
     if (newFuelType.trim() && !fuelTypes.includes(newFuelType.trim())) {
-      setFuelTypes([...fuelTypes, newFuelType.trim()]);
+      const newFuel = newFuelType.trim();
+      setFuelTypes([...fuelTypes, newFuel]);
+      // Initialize panels for the new fuel type
+      setPanelsByTab(prev => ({
+        ...prev,
+        [newFuel]: [...defaultPanels]
+      }));
+      setActiveFuelTab(newFuel);
       setNewFuelType('');
       setShowAddFuelModal(false);
     }
@@ -4262,7 +4278,7 @@ const Analytics = () => {
       {/* 4-Panel Grid with Individual Resizable Tiles */}
       <div className="analytics-grid-container">
         <div className="panels-grid">
-          {panels.map((panel, index) => (
+          {(panels || []).map((panel, index) => (
             <div 
               key={panel.id}
               className="dashboard-panel resizable"

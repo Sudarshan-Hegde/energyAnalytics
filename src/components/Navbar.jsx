@@ -24,7 +24,7 @@ const Navbar = ({ user, onLogout, selectedISO, onISOChange }) => {
             <path d="M4 16L16 22L28 16" stroke="#3b82f6" strokeWidth="2"/>
             <path d="M4 22L16 28L28 22" stroke="#3b82f6" strokeWidth="2"/>
           </svg>
-          <span className="navbar-title">GRIDSENSE</span>
+          <span className="navbar-title">GridOps</span>
         </div>
         
         <div className="navbar-links">
