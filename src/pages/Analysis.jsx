@@ -91,7 +91,7 @@ const Analysis = () => {
     model: 'PCM 2030 Baseline',
     scenario: 'Summer Peak Load',
     outlook: '2030 Horizon',
-    majorNuLRTP: 'ISO-NE LRTP 2024'
+    majorNuLRTP: ' - '
   });
   
   // Dummy data for graphs
@@ -959,7 +959,7 @@ const Analysis = () => {
                         })()}
                         
                         {/* Y-axis labels */}
-                        <text x="20" y="125" fontSize="11" fill="#64748b" textAnchor="middle" transform="rotate(-90 20 125)">LMP ($/MWh)</text>
+                        <text x="20" y="125" fontSize="11" fill="#64748b" textAnchor="middle" transform="rotate(-90 20 125)">MW</text>
                         <text x="390" y="125" fontSize="11" fill="#f59e0b" textAnchor="middle" transform="rotate(90 390 125)">Demand (GW)</text>
                         <text x="210" y="240" fontSize="12" fill="#64748b" textAnchor="middle">Year</text>
                       </svg>
