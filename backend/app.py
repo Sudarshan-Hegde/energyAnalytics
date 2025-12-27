@@ -701,6 +701,8 @@ def get_bus_dashboard():
                 state,
                 CAST(headroom_capacity_substation_discharging AS REAL) as headroom_discharging,
                 CAST(headroom_capacity_substation_charging AS REAL) as headroom_charging,
+                CAST(headroom_capacity_substation_discharging_1 AS REAL) as headroom_discharging_spring,
+                CAST(headroom_capacity_substation_charging_1 AS REAL) as headroom_charging_spring,
                 "5_year_forecast_avg_lmp_base_case" as forecast_base,
                 "5_year_forecast_avg_lmp_after_500mw_injection" as forecast_500mw,
                 historical_average_lmp,
