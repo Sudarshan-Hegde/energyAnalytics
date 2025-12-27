@@ -1012,7 +1012,10 @@ const Maps = ({ selectedISO }) => {
               voltage: props.voltage,
               county: props.county,
               state: props.state,
+              zone: props.zone,
               shortCircuit: props.shortCircuit,
+              headroom_discharging: props.headroom_discharging,
+              headroom_charging: props.headroom_charging,
               lmp2022: props.lmp2022,
               lmp2023: props.lmp2023,
               lmp2024: props.lmp2024,
@@ -2991,6 +2994,25 @@ const Maps = ({ selectedISO }) => {
                         <span className="info-label">Bus ID:</span>
                         <span className="info-value">{substation.id}</span>
                       </div>
+                      
+                      {/* Headroom Capacity (Overhead Info) */}
+                      {(substation.headroom_discharging || substation.headroom_charging) && (
+                        <div className="info-row header-row" style={{marginTop: '15px', borderTop: '1px solid #e5e7eb', paddingTop: '12px'}}>
+                          <span className="info-label" style={{fontWeight: '600', color: '#374151'}}>Headroom Capacity (MW)</span>
+                        </div>
+                      )}
+                      {substation.headroom_discharging && (
+                        <div className="info-row">
+                          <span className="info-label">Discharging Capacity:</span>
+                          <span className="info-value" style={{color: '#10b981', fontWeight: '600'}}>{parseFloat(substation.headroom_discharging).toFixed(1)} MW</span>
+                        </div>
+                      )}
+                      {substation.headroom_charging && (
+                        <div className="info-row">
+                          <span className="info-label">Charging Capacity:</span>
+                          <span className="info-value" style={{color: '#3b82f6', fontWeight: '600'}}>{parseFloat(substation.headroom_charging).toFixed(1)} MW</span>
+                        </div>
+                      )}
                     </div>
                   </details>
 
@@ -4038,7 +4060,9 @@ const Maps = ({ selectedISO }) => {
                           </svg>
                           Headroom by Scenario
                         </h4>
-                        <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end', height: '320px', padding: '20px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end', height: '320px', padding: '20px', position: 'relative' }}>
+                          {/* Y-Axis Label */}
+                          <div style={{ position: 'absolute', left: '5px', top: '50%', transform: 'translateY(-50%) rotate(-90deg)', fontSize: '11px', fontWeight: '600', color: '#6b7280', whiteSpace: 'nowrap' }}>Price ($/MWh)</div>
                           {dashboardData.map((bus, idx) => {
                             const dischargingValue = parseFloat(bus.headroom_discharging) || 0;
                             const chargingValue = parseFloat(bus.headroom_charging) || 0;
@@ -4088,7 +4112,9 @@ const Maps = ({ selectedISO }) => {
                           </svg>
                           5-Year Forecast: Base vs +500MW ($/MWh)
                         </h4>
-                        <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end', height: '300px', padding: '20px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end', height: '300px', padding: '20px', position: 'relative' }}>
+                          {/* Y-Axis Label */}
+                          <div style={{ position: 'absolute', left: '5px', top: '50%', transform: 'translateY(-50%) rotate(-90deg)', fontSize: '11px', fontWeight: '600', color: '#6b7280', whiteSpace: 'nowrap' }}>Price ($/MWh)</div>
                           {dashboardData.map((bus, idx) => {
                             const baseValue = parseFloat(bus.forecast_base) || 0;
                             const injectionValue = parseFloat(bus.forecast_500mw) || 0;
@@ -4137,7 +4163,9 @@ const Maps = ({ selectedISO }) => {
                           </svg>
                           Node LMP vs Base vs Basis ($/MWh)
                         </h4>
-                        <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end', height: '320px', padding: '20px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end', height: '320px', padding: '20px', position: 'relative' }}>
+                          {/* Y-Axis Label */}
+                          <div style={{ position: 'absolute', left: '5px', top: '50%', transform: 'translateY(-50%) rotate(-90deg)', fontSize: '11px', fontWeight: '600', color: '#6b7280', whiteSpace: 'nowrap' }}>Price ($/MWh)</div>
                           {dashboardData.map((bus, idx) => {
                             const nodeLMP = parseFloat(bus.historical_average_lmp) || 0;
                             const basis = parseFloat(bus.basis) || 0;
@@ -4200,7 +4228,9 @@ const Maps = ({ selectedISO }) => {
                           </svg>
                           Curtailment by Injection Level
                         </h4>
-                        <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end', height: '320px', padding: '20px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end', height: '320px', padding: '20px', paddingLeft: '30px', position: 'relative' }}>
+                          {/* Y-Axis Label */}
+                          <div style={{ position: 'absolute', left: '5px', top: '50%', transform: 'translateY(-50%) rotate(-90deg)', fontSize: '11px', fontWeight: '600', color: '#6b7280', whiteSpace: 'nowrap' }}>Curtailment (%)</div>
                           {dashboardData.map((bus, idx) => {
                             const curtailment500 = parseFloat(bus.curtailment_with_500_mw) || 0;
                             const curtailment250 = parseFloat(bus.curtailment_with_250_mw) || 0;
@@ -4480,7 +4510,9 @@ const Maps = ({ selectedISO }) => {
                       </svg>
                       Headroom by Scenario
                     </h3>
-                    <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end', height: '400px', padding: '20px', overflowX: 'auto' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end', height: '400px', padding: '20px', paddingLeft: '40px', overflowX: 'auto', position: 'relative' }}>
+                      {/* Y-Axis Label */}
+                      <div style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%) rotate(-90deg)', fontSize: '13px', fontWeight: '600', color: '#6b7280', whiteSpace: 'nowrap' }}>Capacity (MW)</div>
                       {dashboardData.map((bus, idx) => {
                         const dischargingValue = parseFloat(bus.headroom_discharging) || 0;
                         const chargingValue = parseFloat(bus.headroom_charging) || 0;
@@ -4530,7 +4562,9 @@ const Maps = ({ selectedISO }) => {
                       </svg>
                       5-Year Forecast: Base vs +500MW ($/MWh)
                     </h3>
-                    <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end', height: '400px', padding: '20px', overflowX: 'auto' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end', height: '400px', padding: '20px', paddingLeft: '40px', overflowX: 'auto', position: 'relative' }}>
+                      {/* Y-Axis Label */}
+                      <div style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%) rotate(-90deg)', fontSize: '13px', fontWeight: '600', color: '#6b7280', whiteSpace: 'nowrap' }}>Price ($/MWh)</div>
                       {dashboardData.map((bus, idx) => {
                         const baseValue = parseFloat(bus.forecast_base) || 0;
                         const injectionValue = parseFloat(bus.forecast_500mw) || 0;
@@ -4579,7 +4613,9 @@ const Maps = ({ selectedISO }) => {
                       </svg>
                       Node LMP vs Base vs Basis ($/MWh)
                     </h3>
-                    <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end', height: '400px', padding: '20px', overflowX: 'auto' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end', height: '400px', padding: '20px', paddingLeft: '40px', overflowX: 'auto', position: 'relative' }}>
+                      {/* Y-Axis Label */}
+                      <div style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%) rotate(-90deg)', fontSize: '13px', fontWeight: '600', color: '#6b7280', whiteSpace: 'nowrap' }}>Price ($/MWh)</div>
                       {dashboardData.map((bus, idx) => {
                         const nodeLMP = parseFloat(bus.historical_average_lmp) || 0;
                         const basis = parseFloat(bus.basis) || 0;
@@ -4642,7 +4678,9 @@ const Maps = ({ selectedISO }) => {
                       </svg>
                       Curtailment by Injection Level
                     </h3>
-                    <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end', height: '400px', padding: '20px', overflowX: 'auto' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end', height: '400px', padding: '20px', paddingLeft: '40px', overflowX: 'auto', position: 'relative' }}>
+                      {/* Y-Axis Label */}
+                      <div style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%) rotate(-90deg)', fontSize: '13px', fontWeight: '600', color: '#6b7280', whiteSpace: 'nowrap' }}>Curtailment (%)</div>
                       {dashboardData.map((bus, idx) => {
                         const curtailment500 = parseFloat(bus.curtailment_with_500_mw) || 0;
                         const curtailment250 = parseFloat(bus.curtailment_with_250_mw) || 0;
