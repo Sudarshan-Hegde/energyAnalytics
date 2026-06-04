@@ -1,0 +1,1540 @@
+================================================================================
+COMPREHENSIVE INTERVIEW QUESTIONS
+Energy Analytics Project
+================================================================================
+
+TABLE OF CONTENTS
+-----------------
+1. Frontend Technology Questions (React, Vite, JavaScript)
+2. Backend Technology Questions (Flask, Python)
+3. Data Visualization Questions (ECharts)
+4. Mapping & GIS Questions (MapLibre GL)
+5. Electrical Engineering & Domain Knowledge
+6. Power System Analysis Questions
+7. Database & Data Management
+8. API Design & Integration
+9. Performance & Optimization
+10. Testing & Debugging
+11. Security & Authentication
+12. Project Architecture & Design Patterns
+13. Version Control & Deployment
+14. Behavioral & Scenario-Based Questions
+
+================================================================================
+1. FRONTEND TECHNOLOGY QUESTIONS (React, Vite, JavaScript)
+================================================================================
+
+REACT FUNDAMENTALS
+------------------
+Q1: What version of React are you using in this project and why?
+A: React 19.2.0 - Latest stable version with improved performance, better 
+   concurrent features, and enhanced hooks API.
+
+Q2: Explain the component structure of your Energy Analytics application.
+A: App.jsx serves as the root component with routing via react-router-dom.
+   Major pages: Analytics, Analysis, Maps, Admin, Login
+   Reusable components: Navbar
+   Custom hooks: useEconomicData, useGridInfrastructure
+
+Q3: How do you manage state in your React application?
+A: Combination of:
+   - useState for local component state
+   - Custom hooks for shared logic (useEconomicData, useGridInfrastructure)
+   - Props drilling for parent-child communication
+   - Potential Context API for global state management
+
+Q4: What are React hooks and which ones did you use in this project?
+A: Hooks are functions that let you use state and lifecycle features in 
+   functional components. Used:
+   - useState: Managing component state
+   - useEffect: Side effects, data fetching, subscriptions
+   - Custom hooks: useEconomicData, useGridInfrastructure for data fetching logic
+
+Q5: Explain the difference between controlled and uncontrolled components.
+A: Controlled components have form data controlled by React state (value + onChange).
+   Uncontrolled components store their own state internally (use refs).
+   This project likely uses controlled components for forms in Admin/Login.
+
+Q6: How do you handle routing in your application?
+A: Using react-router-dom v7.10.1:
+   - BrowserRouter for routing context
+   - Routes and Route components for path definitions
+   - Navigation between Analytics, Analysis, Maps, Admin, Login pages
+   - Programmatic navigation with useNavigate hook
+
+Q7: What is the virtual DOM and how does React use it?
+A: Virtual DOM is an in-memory representation of real DOM. React:
+   1. Creates virtual DOM tree on state changes
+   2. Diffs with previous virtual DOM (reconciliation)
+   3. Calculates minimal DOM updates needed
+   4. Batches updates for performance
+
+Q8: Explain useEffect hook and its dependency array.
+A: useEffect runs side effects after render.
+   - Empty array []: Runs once on mount
+   - With dependencies [var]: Runs when dependencies change
+   - No array: Runs after every render
+   - Return function: Cleanup on unmount
+
+Q9: How do you prevent unnecessary re-renders in React?
+A: - React.memo for component memoization
+   - useMemo for expensive calculations
+   - useCallback for function memoization
+   - Proper key usage in lists
+   - Avoiding inline object/function creation in JSX
+
+Q10: What are React keys and why are they important?
+A: Keys help React identify which items changed/added/removed in lists.
+    Important for efficient reconciliation and maintaining component state.
+    Should be stable, unique identifiers (not array indices if list changes).
+
+
+VITE BUILD TOOL
+---------------
+Q11: Why did you choose Vite over other build tools like Webpack?
+A: - Ultra-fast HMR (Hot Module Replacement)
+   - Native ES modules in development
+   - Optimized production builds with Rollup
+   - Simple configuration
+   - Better developer experience
+
+Q12: Explain Vite's dev server and how it differs from Webpack.
+A: Vite uses native ES modules, serving files on-demand without bundling.
+   Webpack bundles entire app before serving.
+   Result: Near-instant server start and faster HMR.
+
+Q13: What is Hot Module Replacement (HMR)?
+A: Updates modules in running application without full refresh.
+   Preserves application state while updating code.
+   Vite's HMR is extremely fast due to ES module approach.
+
+Q14: How do you optimize your Vite build for production?
+A: - Code splitting with dynamic imports
+   - Tree shaking to remove unused code
+   - Minification (enabled by default)
+   - Asset optimization
+   - Lazy loading routes/components
+
+Q15: What is in your vite.config.js file?
+A: Configuration for:
+   - React plugin (@vitejs/plugin-react)
+   - Build options
+   - Server settings
+   - Path aliases
+   - Environment variables
+
+
+JAVASCRIPT/ES6+
+---------------
+Q16: Explain async/await and how you use it for API calls.
+A: Syntactic sugar over Promises for asynchronous code.
+   Used in api.js service for cleaner API calls:
+   - await pauses execution until Promise resolves
+   - try/catch for error handling
+   - Makes async code look synchronous
+
+Q17: What are arrow functions and how do they differ from regular functions?
+A: - Concise syntax: () => {}
+   - Lexical 'this' binding (inherits from parent scope)
+   - Cannot be used as constructors
+   - No 'arguments' object
+   - Used extensively in React for event handlers and callbacks
+
+Q18: Explain destructuring and spread operator with examples.
+A: Destructuring: const {name, age} = person;
+   Spread: const newArray = [...oldArray, newItem];
+   Used for props, state updates, API responses.
+
+Q19: What is the difference between let, const, and var?
+A: - var: function-scoped, hoisted, can redeclare
+   - let: block-scoped, not hoisted, cannot redeclare
+   - const: block-scoped, must initialize, cannot reassign (but objects mutable)
+
+Q20: Explain Promises and Promise chaining.
+A: Promises represent eventual completion/failure of async operation.
+   States: pending, fulfilled, rejected
+   Chaining: .then().then().catch()
+   Used in API calls before async/await
+
+
+================================================================================
+2. BACKEND TECHNOLOGY QUESTIONS (Flask, Python)
+================================================================================
+
+FLASK FUNDAMENTALS
+------------------
+Q21: Why did you choose Flask for your backend?
+A: - Lightweight and flexible microframework
+   - Perfect for RESTful APIs
+   - Easy integration with Python data science libraries
+   - Simple routing and minimal boilerplate
+   - Good for medium-sized applications
+
+Q22: Explain the structure of your Flask application (app.py).
+A: - Flask app initialization
+   - CORS configuration for frontend communication
+   - Route definitions for API endpoints
+   - Data processing logic
+   - Error handling
+   - Server configuration
+
+Q23: What is CORS and why do you need flask-cors?
+A: Cross-Origin Resource Sharing allows frontend (different origin) to access
+   backend API. flask-cors handles CORS headers automatically.
+   Necessary because frontend (Vite dev server) runs on different port.
+
+Q24: How do you handle routing in Flask?
+A: Using @app.route decorator:
+   @app.route('/api/endpoint', methods=['GET', 'POST'])
+   Defines URL patterns and allowed HTTP methods.
+
+Q25: Explain Flask's request and response objects.
+A: - request: Contains incoming request data (args, json, headers, etc.)
+   - response: Can be dict (auto-converted to JSON), Response object, or tuple
+   Used for handling API communication
+
+Q26: How do you handle errors and exceptions in Flask?
+A: - try/except blocks in route handlers
+   - @app.errorhandler decorator for custom error pages
+   - Return appropriate HTTP status codes (400, 404, 500)
+   - Error response format: {'error': 'message'}
+
+Q27: What are Flask Blueprints and would you use them in this project?
+A: Blueprints organize large apps into modules.
+   Useful for scaling this project:
+   - auth_bp for authentication
+   - api_bp for API routes
+   - admin_bp for admin functions
+
+Q28: How do you validate incoming data in Flask?
+A: - Manual validation in route handlers
+   - Check request.json for required fields
+   - Type checking
+   - Could use libraries like Flask-WTF or marshmallow for complex validation
+
+Q29: Explain Flask's development vs. production modes.
+A: Development: debug=True, auto-reload, detailed errors
+   Production: debug=False, proper WSGI server (Gunicorn/uWSGI), 
+   error logging, security headers
+
+Q30: How would you deploy this Flask application?
+A: Options:
+   - Gunicorn/uWSGI as WSGI server
+   - Nginx as reverse proxy
+   - Cloud platforms: Heroku, AWS, Google Cloud, Azure
+   - Containerization with Docker
+   - Environment variables for configuration
+
+
+PYTHON FUNDAMENTALS
+-------------------
+Q31: What Python data structures did you use and why?
+A: - Lists: Sequential data, time series
+   - Dictionaries: JSON responses, configuration
+   - Sets: Unique collections
+   - Tuples: Immutable data
+   - NumPy arrays: Numerical computations
+
+Q32: Explain list comprehensions with an example from your project.
+A: Concise way to create lists:
+   [x**2 for x in range(10) if x % 2 == 0]
+   Used for data transformation, filtering API responses
+
+Q33: What is the difference between @staticmethod and @classmethod?
+A: @staticmethod: No access to class/instance, utility function
+   @classmethod: Receives class as first argument (cls), alternative constructor
+   Used for organizing related functions
+
+Q34: Explain Python decorators.
+A: Functions that modify other functions.
+   Flask routes use decorators: @app.route()
+   Can add functionality: logging, authentication, caching
+
+Q35: How do you handle file I/O in Python?
+A: with open('file.txt', 'r') as f:
+       data = f.read()
+   Context manager ensures file closure
+   Used for reading data files, configuration
+
+
+================================================================================
+3. DATA VISUALIZATION QUESTIONS (ECharts)
+================================================================================
+
+ECHARTS FUNDAMENTALS
+--------------------
+Q36: Why did you choose ECharts for data visualization?
+A: - Rich chart types (line, bar, scatter, gauge, sankey, etc.)
+   - High performance with large datasets
+   - Beautiful default styling
+   - Interactive features (zoom, tooltip, legend)
+   - Good React integration via echarts-for-react
+
+Q37: Explain how you integrate ECharts with React.
+A: Using echarts-for-react wrapper:
+   - Import ReactECharts component
+   - Pass option object with chart configuration
+   - Handle updates via React state changes
+   - Automatic chart resizing
+
+Q38: What chart types did you use in your Analytics page?
+A: Common energy analytics charts:
+   - Line charts: Time series demand/generation
+   - Bar charts: Comparison of generators/regions
+   - Scatter plots: Correlation analysis
+   - Pie charts: Generation mix
+   - Gauge charts: Real-time metrics
+   - Sankey diagrams: Power flow visualization
+
+Q39: How do you handle large datasets in ECharts?
+A: - Data sampling for millions of points
+   - Progressive rendering
+   - Data aggregation on backend
+   - Lazy loading with pagination
+   - DataZoom for focused viewing
+
+Q40: Explain ECharts option configuration structure.
+A: Main sections:
+   - title: Chart title
+   - tooltip: Hover information
+   - legend: Series identification
+   - xAxis/yAxis: Axis configuration
+   - series: Data and chart type
+   - grid: Layout positioning
+
+Q41: How do you make ECharts responsive?
+A: - Set width/height as percentages
+   - Listen to window resize events
+   - ECharts.resize() method
+   - echarts-for-react handles automatically
+   - CSS grid/flexbox for container
+
+Q42: Explain tooltip customization in ECharts.
+A: tooltip: {
+     trigger: 'axis',
+     formatter: function(params) {
+       return custom HTML/text
+     }
+   }
+   Used for showing detailed energy metrics
+
+Q43: How do you handle real-time data updates in charts?
+A: - setInterval to fetch new data
+   - Update React state with new data
+   - ECharts automatically re-renders
+   - Animation effects for smooth transitions
+
+Q44: What is the dataZoom component in ECharts?
+A: Enables zooming and panning on charts.
+   Types: slider (bottom/right), inside (mouse/touch)
+   Essential for analyzing large time series datasets
+
+Q45: How do you export charts as images?
+A: echartsInstance.getDataURL({
+     type: 'png',
+     pixelRatio: 2,
+     backgroundColor: '#fff'
+   })
+   Useful for reports and documentation
+
+
+================================================================================
+4. MAPPING & GIS QUESTIONS (MapLibre GL)
+================================================================================
+
+MAPLIBRE GL FUNDAMENTALS
+------------------------
+Q46: What is MapLibre GL and why did you choose it?
+A: Open-source fork of Mapbox GL JS.
+   - Free and open-source
+   - Vector tile rendering
+   - WebGL-based for performance
+   - Rich styling capabilities
+   - No API key required for basic use
+
+Q47: How do you display power grid infrastructure on the map?
+A: - GeoJSON format for network data
+   - Point features: Generators, substations
+   - Line features: Transmission lines
+   - Polygon features: Service areas
+   - Custom styling with expressions
+
+Q48: Explain GeoJSON structure and how you use it.
+A: {
+     "type": "FeatureCollection",
+     "features": [{
+       "type": "Feature",
+       "geometry": {"type": "Point", "coordinates": [lng, lat]},
+       "properties": {"name": "Generator1", "capacity": 500}
+     }]
+   }
+   Used in geoUtils.js for geographic data
+
+Q49: How do you add interactivity to map features?
+A: - Click events: map.on('click', layer, callback)
+   - Hover effects: mouseenter/mouseleave
+   - Popups: maplibregl.Popup
+   - Change cursor on hover
+   - Feature state for highlighting
+
+Q50: What coordinate system does MapLibre GL use?
+A: WGS84 (EPSG:4326) - longitude/latitude
+   [longitude, latitude] format (note: lng first!)
+   Standard for web mapping
+
+Q51: How do you handle different map projections?
+A: MapLibre uses Web Mercator (EPSG:3857) for display.
+   Input coordinates in WGS84, automatically projected.
+   For custom projections, need transformation libraries.
+
+Q52: Explain map layers and layer ordering.
+A: Layers define how data is rendered:
+   - Type: circle, line, fill, symbol, heatmap
+   - Source: Data source reference
+   - Paint: Visual styling
+   - Layout: Placement and visibility
+   Order matters: later layers on top
+
+Q53: How do you optimize map performance with many features?
+A: - Clustering for point features
+   - Simplification of geometries
+   - Vector tiles for large datasets
+   - Layer filtering based on zoom
+   - Lazy loading of features
+
+Q54: What are vector tiles and their advantages?
+A: Pre-processed map data in compact binary format.
+   Advantages:
+   - Smaller file sizes
+   - Client-side styling
+   - Smooth zooming
+   - Higher resolution
+   - Faster rendering
+
+Q55: How do you calculate distances on the map?
+A: - Haversine formula for great-circle distance
+   - turf.js library for geospatial calculations
+   - Important for transmission line distances
+   - Implemented in geoUtils.js
+
+
+================================================================================
+5. ELECTRICAL ENGINEERING & DOMAIN KNOWLEDGE
+================================================================================
+
+POWER SYSTEM BASICS
+-------------------
+Q56: Explain the difference between active power (P) and reactive power (Q).
+A: Active Power (P): Actual work done, measured in Watts/MW
+   Reactive Power (Q): Power for magnetic fields, measured in VAR/MVAR
+   Apparent Power (S): Vector sum, S = P + jQ, measured in VA/MVA
+
+Q57: What is the per-unit system and why is it used?
+A: Normalization of electrical quantities to base values.
+   Benefits:
+   - Simplifies calculations
+   - Removes voltage level dependencies
+   - Equipment parameters fall in narrow ranges
+   - Easier error detection
+
+Q58: Explain the three types of buses in power flow analysis.
+A: 1. Slack/Swing bus: Reference, voltage angle = 0
+   2. PV bus: Generators, P and |V| specified
+   3. PQ bus: Load, P and Q specified
+
+Q59: What is a power flow study and when is it performed?
+A: Analysis of steady-state operation.
+   Determines: voltage magnitudes, angles, power flows, losses
+   Performed for: planning, operation, contingency analysis
+
+Q60: Explain economic dispatch and its objective.
+A: Optimal allocation of generation to minimize total cost
+   While satisfying: load demand, generator limits, losses
+   Uses: Lambda iteration or optimization algorithms
+
+Q61: What is N-1 contingency and why is it important?
+A: System must operate safely with any single element out.
+   Tests system reliability and security.
+   Identifies critical components and weak points.
+
+Q62: Explain voltage stability and collapse.
+A: Ability to maintain steady voltages after disturbance.
+   Collapse: Progressive uncontrollable voltage drop
+   Causes: Heavy loading, insufficient reactive support
+   Analysis: PV curves, QV curves, indices
+
+Q63: What are transmission losses and how are they calculated?
+A: Power lost as heat in transmission: I²R losses
+   Calculation: P_loss = Σ P_gen - Σ P_load
+   Depends on: current, resistance, operating point
+
+Q64: Explain the difference between load flow and short circuit analysis.
+A: Load flow: Steady-state analysis, normal operation
+   Short circuit: Transient analysis, fault conditions
+   Different purposes, models, and calculation methods
+
+Q65: What is the role of transformers in power systems?
+A: - Voltage transformation (step-up/step-down)
+   - Impedance matching
+   - Isolation
+   - Control via tap changing
+   - Power transfer between voltage levels
+
+
+RENEWABLE ENERGY
+----------------
+Q66: How do you model wind power generation?
+A: P = 0.5 * ρ * A * Cp * v³
+   Challenges: Variability, forecasting, grid integration
+   Solutions: Storage, forecasting, diverse geography
+
+Q67: What are the challenges of integrating renewable energy?
+A: - Intermittency and variability
+   - Forecasting uncertainty
+   - Low inertia
+   - Voltage regulation
+   - Need for storage/backup
+
+Q68: Explain capacity factor and its significance.
+A: Actual output / Maximum possible output
+   Typical values: Wind 25-40%, Solar 15-25%, Nuclear 90%+
+   Indicates resource quality and reliability
+
+Q69: How does solar irradiance affect power generation?
+A: Linear relationship: P = η * A * G
+   Varies with: time of day, season, weather, panel orientation
+   Need for tracking and forecasting
+
+Q70: What is reactive power control and why is it important?
+A: Maintaining voltage stability and power factor.
+   Sources: Generators, capacitors, STATCOMs
+   Essential for grid stability with renewables
+
+
+================================================================================
+6. POWER SYSTEM ANALYSIS QUESTIONS
+================================================================================
+
+COMPUTATIONAL METHODS
+---------------------
+Q71: Explain the Newton-Raphson method for power flow.
+A: Iterative method using Jacobian matrix:
+   Δx = -J⁻¹ * f(x)
+   Fast quadratic convergence
+   Most common for large systems
+
+Q72: What is the Jacobian matrix in power flow analysis?
+A: Matrix of partial derivatives:
+   [∂P/∂δ  ∂P/∂V]
+   [∂Q/∂δ  ∂Q/∂V]
+   Updated each iteration
+   Indicates sensitivity of power to voltage changes
+
+Q73: How do you handle convergence issues in power flow?
+A: - Better initial guess
+   - Flat start (V=1.0, δ=0)
+   - Reduce system complexity
+   - Check for islands
+   - Adjust tolerance
+   - Use different method (Gauss-Seidel)
+
+Q74: Explain DC power flow approximations.
+A: Assumptions:
+   - Voltage magnitudes = 1.0 p.u.
+   - Small angle differences
+   - Neglect resistance
+   - Neglect reactive power
+   Result: Linear equations, fast solve
+
+Q75: What are the advantages of using admittance matrix?
+A: - Sparse matrix (many zeros)
+   - Efficient storage
+   - Fast computation
+   - Easy modification for contingencies
+   - Natural representation of network
+
+
+OPTIMIZATION
+------------
+Q76: Describe the Lambda iteration method.
+A: Economic dispatch by equal incremental costs.
+   Iteratively adjust λ until power balance satisfied.
+   Each generator: P = (λ - b) / (2a)
+   Simple but may not handle constraints well
+
+Q77: What is optimal power flow (OPF)?
+A: Extension of economic dispatch including:
+   - AC power flow equations
+   - Voltage and line flow limits
+   - Reactive power
+   More complex but more accurate
+
+Q78: How do you handle generator constraints in economic dispatch?
+A: - Lagrange multipliers for equality constraints
+   - Penalty functions or barriers for inequalities
+   - Check violated constraints after solution
+   - Set to limit and re-solve
+
+Q79: Explain unit commitment problem.
+A: Determine which generators to run and when.
+   Considers: start-up costs, minimum up/down times, ramp rates
+   More complex than dispatch: combinatorial optimization
+
+Q80: What optimization algorithms could be used?
+A: - Linear programming (linearized problems)
+   - Quadratic programming (quadratic costs)
+   - Interior point methods
+   - Genetic algorithms
+   - Particle swarm optimization
+
+
+================================================================================
+7. DATABASE & DATA MANAGEMENT
+================================================================================
+
+DATA HANDLING
+-------------
+Q81: How do you structure your data for the power system?
+A: Likely JSON/dictionary format:
+   - Buses: ID, type, voltage, coordinates
+   - Generators: ID, bus, Pmin, Pmax, cost coefficients
+   - Lines: from, to, R, X, limit
+   - Loads: bus, P, Q
+
+Q82: What database would you use for this project and why?
+A: Options:
+   - SQLite: Lightweight, file-based, good for development
+   - PostgreSQL: Robust, GIS support (PostGIS), production
+   - MongoDB: Flexible schema, JSON-like
+   - Time-series DB: InfluxDB for time-series data
+
+Q83: How do you handle time-series demand data?
+A: - Timestamp indexed arrays/dataframes
+   - Aggregation by hour/day/month
+   - Storage in optimized formats
+   - Efficient querying with indexes
+
+Q84: Explain data normalization and why it matters.
+A: Organizing data to reduce redundancy.
+   Normal forms: 1NF, 2NF, 3NF
+   Benefits: Data integrity, easier updates, less storage
+   Example: Separate tables for generators, buses
+
+Q85: How do you ensure data integrity?
+A: - Validation before insertion
+   - Foreign key constraints
+   - Check constraints (e.g., Pmin <= Pmax)
+   - Transactions for atomicity
+   - Regular backups
+
+
+API DATA FLOW
+-------------
+Q86: Describe the data flow from backend to frontend visualization.
+A: 1. Frontend requests data (axios API call)
+   2. Backend Flask route receives request
+   3. Process/calculate required data
+   4. Return JSON response
+   5. Frontend updates state
+   6. React re-renders with new data
+   7. ECharts/MapLibre updates visualization
+
+Q87: How do you handle large datasets in API responses?
+A: - Pagination (limit/offset)
+   - Filtering (date ranges, regions)
+   - Aggregation on backend
+   - Compression (gzip)
+   - Caching frequent requests
+
+Q88: What is data caching and where would you implement it?
+A: Storing computed results for reuse.
+   Frontend: React state, sessionStorage, localStorage
+   Backend: Flask-Caching, Redis
+   Benefits: Faster response, reduced computation
+
+Q89: How do you validate API responses on the frontend?
+A: - Check response status code
+   - Verify expected data structure
+   - Handle missing/null values
+   - Type checking
+   - Error boundaries in React
+
+Q90: Explain JSON serialization/deserialization.
+A: Serialization: Python object → JSON string (json.dumps)
+   Deserialization: JSON string → JavaScript object (JSON.parse)
+   Happens automatically in axios and Flask
+
+
+================================================================================
+8. API DESIGN & INTEGRATION
+================================================================================
+
+REST API DESIGN
+---------------
+Q91: What RESTful endpoints do you have in your API?
+A: Likely structure:
+   GET /api/economic-data
+   GET /api/grid-infrastructure
+   GET /api/power-flow
+   POST /api/analyze
+   GET /api/analytics/demand
+   POST /api/login
+
+Q92: Explain REST principles and HTTP methods.
+A: REST: Representational State Transfer
+   - GET: Retrieve resource
+   - POST: Create resource
+   - PUT: Update/replace resource
+   - PATCH: Partial update
+   - DELETE: Remove resource
+   Stateless, uniform interface
+
+Q93: How do you handle API versioning?
+A: - URL versioning: /api/v1/endpoint
+   - Header versioning: Accept: application/vnd.api.v1+json
+   - Query parameter: /api/endpoint?version=1
+   Prevents breaking changes for clients
+
+Q94: What status codes do you return and when?
+A: - 200: Success
+   - 201: Created
+   - 400: Bad request (invalid data)
+   - 401: Unauthorized
+   - 403: Forbidden
+   - 404: Not found
+   - 500: Server error
+
+Q95: How do you document your API?
+A: Options:
+   - OpenAPI/Swagger specification
+   - README.md with examples
+   - Postman collections
+   - Flask-RESTX for auto-documentation
+   - Code comments
+
+
+FRONTEND-BACKEND INTEGRATION
+----------------------------
+Q96: Explain the api.js service file structure.
+A: Centralized API calls:
+   - axios instance with base URL
+   - Interceptors for auth/errors
+   - Export functions for each endpoint
+   - Error handling wrapper
+   - Type definitions/JSDoc
+
+Q97: How do you handle authentication between frontend and backend?
+A: Common approaches:
+   - JWT tokens in localStorage
+   - Send in Authorization header
+   - Backend validates token
+   - Protected routes check auth
+   - Refresh token mechanism
+
+Q98: What is CORS and how does it affect your application?
+A: Browser security preventing cross-origin requests.
+   Development: Different ports (Vite:5173, Flask:5000)
+   Solution: flask-cors enables CORS
+   Production: Same domain or proper CORS config
+
+Q99: How do you handle API errors gracefully?
+A: - try/catch in async functions
+   - Error state in React components
+   - User-friendly error messages
+   - Retry logic for network errors
+   - Logging for debugging
+
+Q100: Explain request/response interceptors in axios.
+A: Middleware for HTTP requests/responses:
+   Request: Add auth headers, logging
+   Response: Transform data, handle errors globally
+   Defined once, applied to all requests
+
+
+================================================================================
+9. PERFORMANCE & OPTIMIZATION
+================================================================================
+
+FRONTEND OPTIMIZATION
+--------------------
+Q101: How do you optimize React rendering performance?
+A: - React.memo for expensive components
+   - useMemo for calculations
+   - useCallback for functions
+   - Code splitting with React.lazy
+   - Virtualization for long lists
+
+Q102: What is code splitting and how do you implement it?
+A: Splitting bundle into smaller chunks loaded on demand.
+   const Component = React.lazy(() => import('./Component'))
+   Wrapped in Suspense component
+   Reduces initial load time
+
+Q103: How do you optimize ECharts performance?
+A: - Data sampling
+   - Progressive rendering
+   - Disable animation for large datasets
+   - Use canvas instead of SVG
+   - Debounce resize events
+
+Q104: Explain lazy loading and its benefits.
+A: Loading resources only when needed.
+   - Route-based code splitting
+   - Image lazy loading
+   - Defer off-screen charts
+   Benefits: Faster initial load, less bandwidth
+
+Q105: How do you measure frontend performance?
+A: - React DevTools Profiler
+   - Chrome DevTools Performance tab
+   - Lighthouse audits
+   - Web Vitals (LCP, FID, CLS)
+   - Custom performance markers
+
+
+BACKEND OPTIMIZATION
+-------------------
+Q106: How do you optimize database queries?
+A: - Indexes on frequently queried columns
+   - Query only needed columns
+   - Batch operations
+   - Connection pooling
+   - Query result caching
+
+Q107: What is memoization and where would you use it?
+A: Caching function results based on inputs.
+   Python: functools.lru_cache decorator
+   Use for: Expensive calculations, repeated API calls
+   Trade-off: Memory vs. computation time
+
+Q108: How do you handle concurrent requests in Flask?
+A: - Use WSGI server (Gunicorn with workers)
+   - Async routes with Flask 2.0+
+   - Queue long-running tasks (Celery)
+   - Rate limiting for protection
+
+Q109: Explain database connection pooling.
+A: Reusing database connections instead of creating new ones.
+   Reduces overhead of connection establishment.
+   Implemented in SQLAlchemy or connection libraries.
+
+Q110: How would you cache API responses?
+A: Backend:
+   - Flask-Caching with Redis
+   - Cache decorator on routes
+   - Set TTL based on data update frequency
+   Frontend:
+   - React Query/SWR for client caching
+
+
+NETWORK OPTIMIZATION
+-------------------
+Q111: How do you reduce API response times?
+A: - Efficient algorithms
+   - Database indexing
+   - Response compression (gzip)
+   - Asynchronous processing
+   - CDN for static assets
+
+Q112: What is gzip compression and how do you enable it?
+A: Compresses HTTP responses (text-based data).
+   Flask: Use Flask-Compress
+   Reduces bandwidth by 70-90%
+   Automatic decompression by browsers
+
+Q113: How do you optimize bundle size in Vite?
+A: - Tree shaking (automatic)
+   - Code splitting
+   - Analyze bundle (rollup-plugin-visualizer)
+   - Remove unused dependencies
+   - Dynamic imports
+
+Q114: Explain the importance of minimizing HTTP requests.
+A: Each request has overhead (latency, headers).
+   Solutions:
+   - Bundle files
+   - Combine API calls
+   - Inline critical CSS
+   - Sprite images (or use SVG)
+
+Q115: How do you implement pagination for large datasets?
+A: Backend: LIMIT/OFFSET or cursor-based
+   Frontend: Page controls, infinite scroll
+   API: /api/data?page=1&limit=50
+   Benefits: Faster queries, less data transfer
+
+
+================================================================================
+10. TESTING & DEBUGGING
+================================================================================
+
+TESTING STRATEGIES
+------------------
+Q116: What testing strategies would you implement?
+A: - Unit tests: Individual functions
+   - Integration tests: API endpoints
+   - Component tests: React components
+   - E2E tests: Full user flows
+   - Performance tests: Load testing
+
+Q117: How do you test React components?
+A: - React Testing Library
+   - Jest as test runner
+   - Test user interactions
+   - Mock API calls
+   - Snapshot testing for UI
+
+Q118: How do you test Flask API endpoints?
+A: - pytest framework
+   - Flask test client
+   - Mock database calls
+   - Test all HTTP methods
+   - Verify response structure and codes
+
+Q119: What is mocking and why is it useful?
+A: Replacing real dependencies with fake ones.
+   Benefits:
+   - Isolate code under test
+   - Control external dependencies
+   - Faster tests
+   - Test error scenarios
+   Example: Mock API calls in component tests
+
+Q120: How do you test power flow calculations?
+A: - Known test systems (IEEE test cases)
+   - Compare with validated results
+   - Check convergence
+   - Verify constraints satisfied
+   - Edge cases (heavy loading, contingencies)
+
+
+DEBUGGING
+---------
+Q121: What debugging tools do you use for React?
+A: - React DevTools (component tree, state)
+   - Chrome DevTools (console, network, sources)
+   - console.log / debugger statements
+   - React Error Boundaries
+   - VSCode debugger
+
+Q122: How do you debug Flask applications?
+A: - Flask debug mode (detailed errors)
+   - print() / logging module
+   - Python debugger (pdb)
+   - Flask-DebugToolbar
+   - Network tab for API calls
+
+Q123: How do you handle errors in production?
+A: - Error logging (to file/service)
+   - Error monitoring (Sentry, LogRocket)
+   - Graceful degradation
+   - User-friendly error messages
+   - Alerting for critical errors
+
+Q124: Explain the debugging process for a failed API call.
+A: 1. Check network tab in DevTools
+   2. Verify request URL and payload
+   3. Check response status and body
+   4. Backend: Check logs for errors
+   5. Verify database state
+   6. Test endpoint in isolation (Postman)
+   7. Fix issue and verify
+
+Q125: How do you debug visualization rendering issues?
+A: - Check data format in console
+   - Verify chart option structure
+   - Test with simplified data
+   - Check console for ECharts errors
+   - Inspect DOM elements
+   - Test chart in isolation
+
+
+================================================================================
+11. SECURITY & AUTHENTICATION
+================================================================================
+
+SECURITY BEST PRACTICES
+-----------------------
+Q126: How do you secure your Flask API?
+A: - Input validation and sanitization
+   - CORS configuration
+   - HTTPS in production
+   - Rate limiting
+   - SQL injection prevention (parameterized queries)
+   - XSS prevention
+   - Authentication/authorization
+
+Q127: What is HTTPS and why is it important?
+A: HTTP over TLS/SSL for encrypted communication.
+   Prevents: Man-in-the-middle attacks, eavesdropping
+   Required for: Passwords, sensitive data, modern browsers
+   Implementation: SSL certificate, HTTPS redirect
+
+Q128: How do you prevent SQL injection?
+A: - Use parameterized queries/prepared statements
+   - ORM (SQLAlchemy)
+   - Never concatenate user input into queries
+   - Input validation
+   - Principle of least privilege for DB user
+
+Q129: What is XSS and how do you prevent it?
+A: Cross-Site Scripting: Injecting malicious scripts.
+   Prevention:
+   - Escape user input
+   - Content Security Policy headers
+   - React auto-escapes (JSX)
+   - Sanitize HTML if needed
+
+Q130: How do you store sensitive configuration?
+A: - Environment variables (.env file)
+   - Never commit to version control
+   - Use python-dotenv
+   - Separate configs for dev/prod
+   - Secret management services (AWS Secrets Manager)
+
+
+AUTHENTICATION & AUTHORIZATION
+------------------------------
+Q131: How do you implement login functionality?
+A: 1. User submits credentials (Login.jsx)
+   2. POST to /api/login
+   3. Backend verifies credentials
+   4. Generate JWT token
+   5. Return token to frontend
+   6. Store in localStorage
+   7. Include in subsequent requests
+
+Q132: What is JWT and how does it work?
+A: JSON Web Token: Encoded user information.
+   Structure: header.payload.signature
+   Stateless authentication
+   Signed by server, verified on each request
+   Contains claims (user ID, expiry, etc.)
+
+Q133: How do you protect routes that require authentication?
+A: Frontend: Route guards checking token presence
+   Backend: Decorator checking Authorization header
+   Redirect to login if not authenticated
+   Return 401 if invalid token
+
+Q134: What is the difference between authentication and authorization?
+A: Authentication: Verifying identity (who you are)
+   Authorization: Verifying permissions (what you can do)
+   Example: Login vs. Admin access
+
+Q135: How do you handle password storage?
+A: - Never store plaintext
+   - Hash with bcrypt/argon2
+   - Salt automatically included
+   - Verify by hashing input and comparing
+   - Use established libraries
+
+
+================================================================================
+12. PROJECT ARCHITECTURE & DESIGN PATTERNS
+================================================================================
+
+ARCHITECTURE
+------------
+Q136: Describe the overall architecture of your application.
+A: Three-tier architecture:
+   1. Presentation: React frontend (UI/UX)
+   2. Application: Flask backend (business logic, API)
+   3. Data: File-based or database (persistence)
+   Communication via REST API
+
+Q137: What design patterns did you use?
+A: - MVC-like (React components, Flask routes, data layer)
+   - Service pattern (api.js)
+   - Custom hooks (data fetching logic)
+   - Factory pattern (creating chart options)
+   - Observer pattern (React state updates)
+
+Q138: Explain separation of concerns in your project.
+A: - Components: UI rendering only
+   - Hooks: Data fetching and state logic
+   - Services: API communication
+   - Utils: Helper functions
+   - Backend: Separate routes, calculations, data access
+
+Q139: How do you organize your file structure?
+A: Frontend:
+   /src
+     /components - Reusable UI components
+     /pages - Route components
+     /hooks - Custom hooks
+     /services - API layer
+     /utils - Helper functions
+   Backend:
+   /backend
+     app.py - Main application
+     /data - Data files and processing
+
+Q140: What is the Single Responsibility Principle?
+A: Each module/class/function should have one reason to change.
+   Example: Separate components for Navbar, Analytics, Maps
+   Each does one thing well
+
+
+CODE QUALITY
+------------
+Q141: How do you ensure code quality?
+A: - ESLint for code style
+   - Code reviews
+   - Consistent naming conventions
+   - Comments for complex logic
+   - Testing
+   - Refactoring regularly
+
+Q142: What is your code review process?
+A: - Check functionality
+   - Review logic and algorithms
+   - Verify error handling
+   - Check performance implications
+   - Ensure consistency with codebase
+   - Test locally
+
+Q143: How do you handle technical debt?
+A: - Document known issues
+   - Prioritize based on impact
+   - Allocate time for refactoring
+   - Don't let it accumulate
+   - Balance with feature development
+
+Q144: What naming conventions do you follow?
+A: JavaScript:
+   - camelCase for variables/functions
+   - PascalCase for components
+   - UPPER_CASE for constants
+   Python:
+   - snake_case for variables/functions
+   - PascalCase for classes
+
+Q145: How do you document your code?
+A: - JSDoc comments for functions
+   - README for setup and usage
+   - Inline comments for complex logic
+   - API documentation
+   - Architecture diagrams
+
+
+================================================================================
+13. VERSION CONTROL & DEPLOYMENT
+================================================================================
+
+VERSION CONTROL
+---------------
+Q146: What Git workflow do you follow?
+A: - Feature branches from main
+   - Descriptive commit messages
+   - Pull requests for review
+   - Merge to main when approved
+   - Tags for releases
+
+Q147: How do you write good commit messages?
+A: - Present tense, imperative mood
+   - Brief summary (50 chars)
+   - Detailed description if needed
+   - Reference issue numbers
+   - Example: "Add power flow calculation endpoint"
+
+Q148: What is .gitignore and what do you exclude?
+A: Specifies files Git should ignore:
+   - node_modules/
+   - .env
+   - __pycache__/
+   - dist/
+   - *.pyc
+   - IDE config (.vscode/)
+
+Q149: How do you handle merge conflicts?
+A: 1. Identify conflicting files
+   2. Review both changes
+   3. Manually resolve keeping needed code
+   4. Remove conflict markers
+   5. Test thoroughly
+   6. Commit resolution
+
+Q150: What branching strategy would you recommend?
+A: Git Flow:
+   - main: Production code
+   - develop: Integration branch
+   - feature/*: New features
+   - hotfix/*: Urgent fixes
+   Or simpler: trunk-based with feature branches
+
+
+DEPLOYMENT
+----------
+Q151: How would you deploy the frontend?
+A: Build process:
+   1. npm run build (creates dist/)
+   2. Deploy to static hosting:
+      - Netlify
+      - Vercel
+      - GitHub Pages
+      - AWS S3 + CloudFront
+      - Nginx server
+
+Q152: How would you deploy the Flask backend?
+A: Options:
+   - Heroku (easy, quick)
+   - AWS EC2/Elastic Beanstalk
+   - Google Cloud Run
+   - Docker container
+   - Traditional VPS with Gunicorn + Nginx
+
+Q153: What is a production build and how is it different?
+A: Frontend:
+   - Minified code
+   - Optimized assets
+   - No source maps (unless wanted)
+   - Environment variables set
+   Backend:
+   - Debug mode off
+   - Production WSGI server
+   - Proper logging
+   - Security headers
+
+Q154: How do you handle environment-specific configuration?
+A: - .env files (.env.development, .env.production)
+   - Environment variables
+   - Import based on NODE_ENV/FLASK_ENV
+   - Never hardcode values
+   - Different API URLs for dev/prod
+
+Q155: What is CI/CD and how would you implement it?
+A: Continuous Integration/Deployment
+   Automated testing and deployment on code changes.
+   Tools: GitHub Actions, GitLab CI, Jenkins
+   Pipeline:
+   1. Run tests
+   2. Build application
+   3. Deploy if tests pass
+   4. Notify team
+
+
+================================================================================
+14. BEHAVIORAL & SCENARIO-BASED QUESTIONS
+================================================================================
+
+PROJECT EXPERIENCE
+------------------
+Q156: Walk me through your Energy Analytics project.
+A: Full-stack application for power system analysis and visualization.
+   Frontend: React with ECharts for analytics, MapLibre GL for grid mapping
+   Backend: Flask API providing economic dispatch, power flow calculations
+   Features: Real-time monitoring, demand forecasting, grid infrastructure
+   visualization, economic analysis
+   Demonstrates: Full-stack skills, domain knowledge, data visualization
+
+Q157: What was the most challenging part of this project?
+A: Possible answers:
+   - Implementing accurate power flow calculations
+   - Optimizing large dataset visualization
+   - Integrating multiple technologies
+   - Balancing accuracy and performance
+   - Learning electrical engineering concepts
+
+Q158: How did you approach learning the electrical engineering concepts?
+A: - Research papers and textbooks
+   - Online resources and tutorials
+   - Studying existing power system software
+   - Iterative testing with known test cases
+   - Consulting with domain experts
+
+Q159: What would you improve if you had more time?
+A: - More comprehensive testing
+   - User authentication and authorization
+   - Real-time data updates via WebSockets
+   - More advanced optimization algorithms
+   - Mobile-responsive design
+   - Database integration
+   - Microservices architecture
+
+Q160: How did you ensure data accuracy in calculations?
+A: - Validation against IEEE test cases
+   - Unit tests with known results
+   - Range checking for inputs
+   - Convergence criteria verification
+   - Peer review of algorithms
+
+
+PROBLEM-SOLVING
+----------------
+Q161: Describe a bug you encountered and how you fixed it.
+A: Example: Chart not updating with new data
+   - Identified issue: React state not triggering re-render
+   - Debugged using React DevTools
+   - Root cause: Object mutation instead of creating new object
+   - Solution: Use spread operator for state updates
+   - Lesson: Immutability in React
+
+Q162: How do you approach debugging a complex issue?
+A: 1. Reproduce the issue consistently
+   2. Isolate the problem (binary search)
+   3. Form hypothesis
+   4. Test hypothesis
+   5. Fix and verify
+   6. Prevent regression with tests
+
+Q163: A user reports the map is slow with many features. How do you fix it?
+A: 1. Profile to identify bottleneck
+   2. Implement clustering for point features
+   3. Simplify geometries
+   4. Add zoom-based filtering
+   5. Lazy load features outside viewport
+   6. Consider vector tiles
+   7. Test performance improvement
+
+Q164: The power flow calculation isn't converging. What do you check?
+A: - Verify input data correctness
+   - Check for isolated buses
+   - Review initial conditions
+   - Adjust convergence tolerance
+   - Try different starting point
+   - Reduce system size to identify problem area
+   - Code the DC power flow as a check
+
+Q165: How would you add real-time data updates to your application?
+A: - WebSocket connection (Socket.io)
+   - Backend emits data on changes
+   - Frontend subscribes to updates
+   - Update React state on message
+   - Charts re-render automatically
+   - Fallback to polling if WebSocket fails
+
+
+TEAM COLLABORATION
+------------------
+Q166: How would you explain a technical concept to a non-technical stakeholder?
+A: - Avoid jargon
+   - Use analogies
+   - Visual aids (diagrams, demos)
+   - Focus on benefits and outcomes
+   - Welcome questions
+   - Confirm understanding
+
+Q167: How do you handle disagreements about technical approaches?
+A: - Listen to understand their perspective
+   - Present data and trade-offs
+   - Prototype if needed
+   - Compromise if both valid
+   - Defer to expertise/experience
+   - Document decision for future reference
+
+Q168: Describe your code review process.
+A: - Review for functionality, not style
+   - Constructive feedback
+   - Explain reasoning
+   - Ask questions to understand
+   - Praise good solutions
+   - Test changes locally if significant
+
+Q169: How do you prioritize features and bug fixes?
+A: - Impact vs. effort matrix
+   - User impact and urgency
+   - Dependencies
+   - Business value
+   - Technical debt considerations
+   - Balance quick wins and long-term improvements
+
+Q170: How do you stay updated with new technologies?
+A: - Documentation and blogs
+   - Online courses and tutorials
+   - Tech talks and conferences
+   - Side projects
+   - Community (Reddit, Twitter, Discord)
+   - Experimentation in personal projects
+
+
+SPECIFIC SCENARIOS
+------------------
+Q171: A dataset with 1 million points crashes the browser. Solutions?
+A: - Backend aggregation/sampling
+   - Pagination
+   - Data downsampling (every nth point)
+   - Progressive rendering
+   - Virtual scrolling for tables
+   - Lazy loading with viewport detection
+
+Q172: User needs to compare 10 different scenarios. How do you design this?
+A: - Multi-select dropdown for scenarios
+   - Side-by-side or overlay comparison
+   - Difference/delta visualization
+   - Table view for numeric comparison
+   - Export functionality
+   - Save/load comparison sets
+
+Q173: How would you implement user permissions (admin vs regular user)?
+A: - Role-based access control (RBAC)
+   - User table with role field
+   - Backend route decorators checking role
+   - Frontend hide/show based on role
+   - Different dashboards per role
+   - Audit logging for admin actions
+
+Q174: The backend calculation takes 30 seconds. UX considerations?
+A: - Loading spinner/progress bar
+   - Async processing (Celery task queue)
+   - WebSocket for progress updates
+   - Allow cancellation
+   - Estimate time remaining
+   - Cache results for reuse
+   - Optimize calculation if possible
+
+Q175: How would you add export functionality for reports?
+A: - PDF: Use library like jsPDF or backend (ReportLab)
+   - CSV: Convert data and trigger download
+   - Excel: Use libraries (xlsx.js)
+   - Images: Chart.getDataURL() for ECharts
+   - Template-based reports with dynamic data
+   - Server-side generation for complex reports
+
+
+FUTURE ENHANCEMENTS
+-------------------
+Q176: What machine learning applications could you add?
+A: - Load forecasting (LSTM, ARIMA)
+   - Anomaly detection in consumption
+   - Renewable generation prediction
+   - Equipment fault prediction
+   - Optimal scheduling with RL
+   - Price forecasting
+
+Q177: How would you scale this to a national grid?
+A: - Distributed computing for power flow
+   - Database sharding by region
+   - Microservices architecture
+   - Caching layers (Redis)
+   - Load balancing
+   - CDN for static assets
+   - Regional data centers
+
+Q178: What IoT integration opportunities exist?
+A: - Smart meter data ingestion
+   - Real-time sensor data (voltage, current)
+   - SCADA system integration
+   - Weather station data for renewables
+   - Equipment monitoring (temperature, vibration)
+   - Automated demand response
+
+Q179: How would you implement mobile apps for this system?
+A: - React Native for cross-platform
+   - Responsive web design (Progressive Web App)
+   - Simplified dashboards for mobile
+   - Push notifications for alerts
+   - Offline capability with sync
+   - Touch-optimized interactions
+
+Q180: What blockchain applications could be relevant?
+A: - Peer-to-peer energy trading
+   - Renewable energy certificates
+   - Grid transaction transparency
+   - Smart contracts for automated dispatch
+   - Distributed energy resource management
+   - Audit trails for compliance
+
+
+================================================================================
+TIPS FOR ANSWERING INTERVIEW QUESTIONS
+================================================================================
+
+1. STRUCTURE YOUR ANSWERS
+   - Situation/Background
+   - Task/Challenge
+   - Action taken
+   - Result/Outcome
+   - Learning/Reflection
+
+2. BE SPECIFIC
+   - Use concrete examples from this project
+   - Mention specific technologies and versions
+   - Quantify when possible (performance improvements, dataset sizes)
+
+3. SHOW YOUR THOUGHT PROCESS
+   - Explain why you made certain decisions
+   - Discuss trade-offs you considered
+   - Mention alternatives you evaluated
+
+4. DEMONSTRATE LEARNING
+   - Acknowledge what you didn't know initially
+   - Explain how you learned
+   - Discuss what you'd do differently
+
+5. CONNECT TO BEST PRACTICES
+   - Reference industry standards
+   - Mention design patterns
+   - Show awareness of scalability, security, performance
+
+6. Ask CLARIFYING QUESTIONS
+   - If question is vague, ask for specifics
+   - Confirm assumptions
+   - Shows thoughtfulness and communication skills
+
+7. BE HONEST
+   - Admit what you don't know
+   - Explain how you'd find out
+   - Show willingness to learn
+
+8. PREPARE EXAMPLES
+   - Have specific code snippets ready to discuss
+   - Know your most interesting features
+   - Prepare to explain your most complex algorithms
+
+================================================================================
+ADDITIONAL PREPARATION AREAS
+================================================================================
+
+TECHNICAL CONCEPTS TO REVIEW
+-----------------------------
+- JavaScript: Promises, async/await, closures, prototypes
+- React: Lifecycle, hooks in depth, context, performance
+- Python: Decorators, generators, context managers, comprehensions
+- Flask: Request handling, blueprints, middleware, extensions
+- HTTP: Methods, status codes, headers, caching
+- Git: Branching, merging, rebasing, reset vs revert
+- SQL: Joins, indexes, transactions, normalization
+- Algorithms: Complexity, common patterns, optimization
+
+SOFT SKILLS TO HIGHLIGHT
+-------------------------
+- Problem-solving methodology
+- Communication of technical concepts
+- Teamwork and collaboration
+- Time management and prioritization
+- Adaptability and learning agility
+- Attention to detail
+- User-focused thinking
+
+COMMON PITFALLS TO AVOID
+-------------------------
+- Rambling without structure
+- Being too generic
+- Not relating answers to your project
+- Claiming expertise you don't have
+- Criticizing previous teams/technologies
+- Not asking for clarification when needed
+- Focusing only on code, not on impact
+
+QUESTIONS TO ASK INTERVIEWERS
+------------------------------
+- What technologies does your team use?
+- What does a typical day look like?
+- How do you approach technical challenges?
+- What learning and development opportunities exist?
+- How do you measure success for this role?
+- What are the biggest challenges the team faces?
+- What's the code review process?
+- How do you balance feature development and technical debt?
+
+================================================================================
+END OF INTERVIEW PREPARATION GUIDE
+================================================================================
+
+Good luck with your interviews! Remember to:
+- Practice explaining your project clearly and concisely
+- Be prepared to dive deep into any aspect
+- Show enthusiasm for the work you've done
+- Demonstrate continuous learning mindset
+- Connect your experience to the role you're applying for

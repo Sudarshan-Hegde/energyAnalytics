@@ -7,7 +7,7 @@ app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
 # Database path
-DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'gridsense_iso_ne_sample.db')
+DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'gridsense_iso_ne.db')
 
 def get_db_connection():
     """Create a database connection"""

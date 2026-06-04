@@ -1,0 +1,428 @@
+================================================================================
+COMPREHENSIVE SUMMARY OF METHODS AND FORMULAS
+Energy Analytics Project
+================================================================================
+
+TABLE OF CONTENTS
+-----------------
+1. Electrical Engineering Formulas & Methods
+2. Statistical & Data Analysis Methods
+3. Optimization Methods
+4. Network Analysis Methods
+
+================================================================================
+1. ELECTRICAL ENGINEERING FORMULAS & METHODS
+================================================================================
+
+1.1 POWER FLOW CALCULATIONS
+---------------------------
+Location: backend/data/power_flow.py
+
+AC Power Flow (Newton-Raphson Method)
+--------------------------------------
+Active Power Injection:
+  P_i = Σ(V_i * V_j * |Y_ij| * cos(θ_ij - δ_i + δ_j))
+  
+  Where:
+    V = voltage magnitude
+    Y = admittance
+    θ = admittance angle
+    δ = voltage angle
+
+Reactive Power Injection:
+  Q_i = Σ(V_i * V_j * |Y_ij| * sin(θ_ij - δ_i + δ_j))
+
+Jacobian Matrix Elements:
+  - ∂P/∂δ (partial derivative of active power w.r.t. angle)
+  - ∂P/∂V (partial derivative of active power w.r.t. voltage)
+  - ∂Q/∂δ (partial derivative of reactive power w.r.t. angle)
+  - ∂Q/∂V (partial derivative of reactive power w.r.t. voltage)
+  Used for iterative convergence
+
+DC Power Flow (Linearized)
+---------------------------
+Simplified Power Flow:
+  P = B * θ
+  
+  Where:
+    B = susceptance matrix
+    θ = voltage angles
+  
+  Assumptions:
+    - Voltage magnitudes = 1.0 p.u.
+    - Small angle differences
+    - Neglect line resistance
+
+
+1.2 TRANSMISSION LINE PARAMETERS
+---------------------------------
+Location: backend/data/power_flow.py
+
+Line Impedance:
+  Z = R + jX
+  
+  Where:
+    R = resistance (Ω)
+    X = reactance (Ω)
+    j = imaginary unit
+
+Line Admittance:
+  Y = 1/Z = G + jB
+  
+  Where:
+    G = conductance
+    B = susceptance
+
+Shunt Susceptance:
+  B_shunt = ωC
+  
+  Where:
+    ω = angular frequency (2πf)
+    C = line capacitance
+    f = system frequency (typically 50 or 60 Hz)
+
+
+1.3 ECONOMIC DISPATCH
+---------------------
+Location: backend/data/economic_dispatch.py
+
+Generator Cost Function (Quadratic):
+  Cost = a * P² + b * P + c
+  
+  Where:
+    a, b, c = cost coefficients
+    P = power output (MW)
+
+Marginal Cost:
+  MC = dCost/dP = 2aP + b
+
+Lambda Iteration Method:
+  Equal incremental cost criterion:
+    ∂C₁/∂P₁ = ∂C₂/∂P₂ = ... = λ
+  
+  Subject to power balance:
+    Σ P_gen = P_demand + P_losses
+
+Penalty Factor Method:
+  - Accounts for transmission losses
+  - Modified marginal cost includes network impact
+  - Penalty factor represents dP_loss/dP_gen for each generator
+
+
+1.4 VOLTAGE STABILITY ANALYSIS
+-------------------------------
+Location: backend/data/voltage_stability.py
+
+PV Curve Analysis:
+  - Plots voltage magnitude vs. load parameter
+  - Identifies critical points for voltage collapse
+  - Nose curve indicates maximum loadability
+
+QV Curve Analysis:
+  - Reactive power vs. voltage relationship
+  - Identifies reactive power margins
+  - Determines minimum reactive power support needed
+
+Voltage Stability Index:
+  VSI = |V|⁴ - 4(PR + QX)²
+  
+  Where:
+    P, Q = active and reactive power
+    R, X = line resistance and reactance
+    V = receiving end voltage
+  
+  Interpretation:
+    VSI > 0: Stable
+    VSI = 0: Critical point
+    VSI < 0: Unstable
+
+Load Margin:
+  Load Margin = (P_critical - P_base) / P_base × 100%
+  
+  Indicates distance to voltage collapse
+
+
+1.5 CONTINGENCY ANALYSIS
+-------------------------
+Location: backend/data/contingency_analysis.py
+
+N-1 Contingency:
+  - Simulates single element (line/generator) outages
+  - Evaluates system security
+  - Checks for violations after each contingency
+
+Line Loading:
+  Line Loading % = (|S_flow| / S_rating) × 100%
+  
+  Where:
+    S_flow = apparent power flow = √(P² + Q²)
+    S_rating = line thermal rating (MVA)
+
+Voltage Violation Check:
+  V_min ≤ V_bus ≤ V_max
+  
+  Typical limits:
+    0.95 p.u. ≤ V ≤ 1.05 p.u.
+
+
+1.6 RENEWABLE ENERGY INTEGRATION
+---------------------------------
+Location: backend/data/renewable_integration.py
+
+Wind Power Model:
+  P_wind = 0.5 * ρ * A * Cp * v³
+  
+  Where:
+    ρ = air density (kg/m³)
+    A = rotor swept area (m²)
+    Cp = power coefficient (typically 0.35-0.45)
+    v = wind speed (m/s)
+
+Solar Power Model:
+  P_solar = η * A * G
+  
+  Where:
+    η = panel efficiency (typically 0.15-0.22)
+    A = panel area (m²)
+    G = solar irradiance (W/m²)
+
+Capacity Factor:
+  CF = (Actual Energy Output) / (Maximum Possible Output) × 100%
+  
+  Measures actual vs. potential energy production
+
+
+1.7 TRANSFORMER MODELS
+-----------------------
+Location: backend/data/power_flow.py
+
+Transformer Tap Ratio:
+  a = V_primary / V_secondary
+  
+  Range typically: 0.9 to 1.1 (±10%)
+
+Transformer Admittance:
+  Y_transformer = 1 / (R + jX)
+  
+  Off-nominal tap ratio affects admittance matrix
+
+
+================================================================================
+2. STATISTICAL & DATA ANALYSIS METHODS
+================================================================================
+
+2.1 TIME SERIES ANALYSIS
+-------------------------
+Location: backend/data/time_series_demand.py
+
+Moving Average:
+  MA(t) = (1/n) * Σ x(t-i) for i=0 to n-1
+  
+  Where:
+    n = window size
+    x(t) = time series value at time t
+
+Exponential Smoothing:
+  S(t) = α * x(t) + (1-α) * S(t-1)
+  
+  Where:
+    α = smoothing factor (0 < α < 1)
+    Larger α gives more weight to recent observations
+
+Seasonal Decomposition:
+  x(t) = Trend(t) + Seasonal(t) + Residual(t)
+  
+  Components:
+    - Trend: Long-term progression
+    - Seasonal: Regular periodic patterns
+    - Residual: Random variation
+
+Peak Demand Calculation:
+  Peak = max(hourly_demand)
+  
+  Load Factor = Average Demand / Peak Demand
+  
+  Higher load factor indicates more efficient asset utilization
+
+
+2.2 ENERGY METRICS
+------------------
+Location: Throughout backend
+
+Energy Consumption:
+  E = ∫ P(t) dt  (continuous)
+  or
+  E = Σ P_i * Δt  (discrete)
+  
+  Units: kWh, MWh, GWh
+
+Average Power:
+  P_avg = Total Energy / Time Period
+
+Load Duration Curve:
+  - Sorts loads in descending order
+  - Shows duration at each load level
+  - Area under curve = total energy
+
+
+================================================================================
+3. OPTIMIZATION METHODS
+================================================================================
+
+3.1 UNIT COMMITMENT
+--------------------
+Location: backend/data/economic_dispatch.py
+
+Objective Function:
+  minimize: Σ_t Σ_i (GenerationCost_i,t + StartupCost_i,t + ShutdownCost_i,t)
+  
+  Where:
+    t = time period index
+    i = generator index
+
+Constraints:
+  - Power balance: Σ P_gen,t = P_demand,t
+  - Generator limits: P_min ≤ P_gen ≤ P_max
+  - Ramp rate limits: |P_t - P_t-1| ≤ RampRate
+  - Minimum up/down time requirements
+  - Reserve requirements: Σ P_max,online ≥ P_demand + Reserve_margin
+
+
+3.2 OPTIMAL POWER FLOW (OPF)
+-----------------------------
+Implicit in power flow calculations
+
+Objective:
+  minimize: Total Generation Cost = Σ C_i(P_gen,i)
+
+Subject to:
+  - Power flow equations (equality constraints)
+  - Generator limits: P_min ≤ P_gen ≤ P_max
+  - Voltage limits: V_min ≤ V ≤ V_max
+  - Line flow limits: |S_line| ≤ S_max
+  - Reactive power limits: Q_min ≤ Q_gen ≤ Q_max
+
+
+================================================================================
+4. NETWORK ANALYSIS METHODS
+================================================================================
+
+4.1 GRAPH THEORY APPLICATIONS
+------------------------------
+Location: Various locations in backend
+
+Network Connectivity:
+  - Node degree: Number of connections per bus
+  - Path analysis: Shortest path between nodes
+  - Network topology identification
+
+Admittance Matrix Construction:
+  Y_bus matrix represents network topology
+  
+  Diagonal elements: Y_ii = Σ y_ij (sum of all admittances connected to bus i)
+  Off-diagonal: Y_ij = -y_ij (negative of branch admittance)
+
+
+4.2 POWER SYSTEM METRICS
+-------------------------
+
+System Loss:
+  P_loss = Σ P_generation - Σ P_demand
+  
+  Loss Factor = P_loss / P_generation × 100%
+
+Short Circuit Analysis:
+  I_fault = V_pre-fault / Z_equivalent
+  
+  Where Z_equivalent is the Thevenin equivalent impedance
+
+
+================================================================================
+5. PERFORMANCE INDICATORS
+================================================================================
+
+5.1 RELIABILITY METRICS
+------------------------
+
+System Average Interruption Duration Index (SAIDI):
+  SAIDI = Σ(Customer Interruption Durations) / Total Customers
+
+System Average Interruption Frequency Index (SAIFI):
+  SAIFI = Total Number of Customer Interruptions / Total Customers
+
+Energy Not Served (ENS):
+  ENS = Σ(Interrupted Load × Interruption Duration)
+
+
+5.2 EFFICIENCY METRICS
+----------------------
+
+Transmission Efficiency:
+  η_transmission = P_delivered / P_sent × 100%
+
+Generator Heat Rate:
+  Heat Rate = Fuel Energy Input / Electrical Energy Output
+  Units: Btu/kWh or MJ/kWh
+
+
+================================================================================
+6. COMPUTATIONAL METHODS
+================================================================================
+
+6.1 NUMERICAL CONVERGENCE CRITERIA
+-----------------------------------
+
+Power Mismatch Tolerance:
+  max(|ΔP|, |ΔQ|) < ε
+  
+  Where:
+    ΔP = P_scheduled - P_calculated
+    ΔQ = Q_scheduled - Q_calculated
+    ε = tolerance (typically 0.001 p.u.)
+
+Maximum Iterations:
+  Prevent infinite loops in iterative methods
+  Typical limit: 10-20 iterations
+
+
+6.2 MATRIX OPERATIONS
+---------------------
+
+Gauss-Seidel Method:
+  Iterative solution of linear equations
+  Used in simple power flow calculations
+
+Newton-Raphson Method:
+  Δx = -J⁻¹ * f(x)
+  
+  Where:
+    J = Jacobian matrix
+    f(x) = mismatch vector
+    Quadratic convergence near solution
+
+
+================================================================================
+NOTES
+================================================================================
+
+1. All power flow calculations assume balanced three-phase operation unless 
+   otherwise specified.
+
+2. Per-unit system is commonly used for normalization:
+   Base values: S_base (MVA), V_base (kV)
+   
+3. Complex power notation:
+   S = P + jQ
+   Where P = active power, Q = reactive power
+
+4. Phasor representation:
+   V = |V| ∠ δ
+   Where |V| = magnitude, δ = angle
+
+5. Standard frequency assumptions:
+   - North America: 60 Hz
+   - Europe/Most of world: 50 Hz
+
+================================================================================
+END OF DOCUMENT
+================================================================================
