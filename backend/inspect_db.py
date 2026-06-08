@@ -2,7 +2,8 @@ import sqlite3
 import os
 
 # Connect to database
-db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'gridsense_iso_ne.db')
+db_filename = os.getenv('GRID_DB_FILENAME', 'gridsense_iso_ne_sample.db')
+db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), db_filename)
 conn = sqlite3.connect(db_path)
 cursor = conn.cursor()
 

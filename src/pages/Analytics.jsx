@@ -111,7 +111,7 @@ const Analytics = () => {
   
   // Available databases (Task 1: Only database files)
   const availableDatabases = [
-    { id: 'gridsense_iso_ne.db', name: 'gridsense_iso_ne.db' },
+    { id: 'gridsense_iso_ne_sample.db', name: 'gridsense_iso_ne_sample.db' },
     { id: 'economic_data.db', name: 'economic_data.db' },
     { id: 'operational_data.db', name: 'operational_data.db' },
     { id: 'environmental_data.db', name: 'environmental_data.db' },
@@ -122,7 +122,7 @@ const Analytics = () => {
   ];
   
   // Selected database (Task 2: No table dropdown needed)
-  const [selectedDatabase, setSelectedDatabase] = useState('gridsense_iso_ne.db');
+  const [selectedDatabase, setSelectedDatabase] = useState('gridsense_iso_ne_sample.db');
   
   // Available database fields for configuration (Task 3: All attributes from selected database/table)
   const [availableFields, setAvailableFields] = useState({
@@ -188,7 +188,7 @@ const Analytics = () => {
     fetchSchema();
   }, []);
   
-  // Fetch data from gridsense_iso_ne.db
+  // Fetch data from gridsense_iso_ne_sample.db
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
@@ -396,7 +396,7 @@ const Analytics = () => {
       return [];
     }
     
-    // Use buses data as the primary source from gridsense_iso_ne.db (which contains econ table data)
+  // Use buses data as the primary source from gridsense_iso_ne_sample.db (which contains econ table data)
     const sourceData = databaseData.buses;
     
     // Field mapping is no longer needed - we use exact econ table column names

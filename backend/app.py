@@ -7,7 +7,8 @@ app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
 # Database path
-DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'gridsense_iso_ne.db')
+DB_FILENAME = os.getenv('GRID_DB_FILENAME', 'gridsense_iso_ne_sample.db')
+DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), DB_FILENAME)
 
 def get_db_connection():
     """Create a database connection"""
@@ -952,7 +953,7 @@ if __name__ == '__main__':
     # Check if database exists
     if not os.path.exists(DB_PATH):
         print(f"ERROR: Database not found at {DB_PATH}")
-        print("Please ensure gridsense_iso_ne.db exists in the project root")
+        print(f"Please ensure {DB_FILENAME} exists in the project root")
         exit(1)
     
     print(f"Starting GridSense Backend API...")
