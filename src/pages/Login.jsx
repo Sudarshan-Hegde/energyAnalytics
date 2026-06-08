@@ -91,6 +91,7 @@ const Login = ({ onLogin }) => {
                   placeholder="Enter your username"
                   required
                   autoFocus
+                  autoComplete="username"
                 />
               </div>
             </div>
@@ -110,6 +111,7 @@ const Login = ({ onLogin }) => {
                   onChange={handleInputChange}
                   placeholder="Enter your password"
                   required
+                  autoComplete="current-password"
                 />
               </div>
             </div>
