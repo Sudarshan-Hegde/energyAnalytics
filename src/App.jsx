@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Navbar from './components/Navbar';
-import Login from './pages/Login';
 import Maps from './pages/Maps';
 import Analytics from './pages/Analytics';
 import Admin from './pages/Admin';
@@ -9,32 +8,16 @@ import Analysis from './pages/Analysis';
 import './App.css';
 
 function App() {
-  const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedISO, setSelectedISO] = useState('iso_ne');
 
   useEffect(() => {
-    // Check if user is logged in
-    const savedUser = localStorage.getItem('user');
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
-    }
-    // Check for saved ISO selection
     const savedISO = localStorage.getItem('selectedISO');
     if (savedISO) {
       setSelectedISO(savedISO);
     }
     setIsLoading(false);
   }, []);
-
-  const handleLogin = (userData) => {
-    setUser(userData);
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('user');
-    setUser(null);
-  };
   
   const handleISOChange = (isoId) => {
     setSelectedISO(isoId);
@@ -65,33 +48,15 @@ function App() {
   return (
     <Router>
       <div className="app">
-        {user && <Navbar user={user} onLogout={handleLogout} selectedISO={selectedISO} onISOChange={handleISOChange} />}
+        <Navbar selectedISO={selectedISO} onISOChange={handleISOChange} />
         <main className="main-content">
           <Routes>
-            <Route 
-              path="/login" 
-              element={user ? <Navigate to="/maps" /> : <Login onLogin={handleLogin} />} 
-            />
-            <Route 
-              path="/" 
-              element={user ? <Navigate to="/maps" /> : <Navigate to="/login" />} 
-            />
-            <Route 
-              path="/analysis" 
-              element={user ? <Analysis /> : <Navigate to="/login" />} 
-            />
-            <Route 
-              path="/maps" 
-              element={user ? <Maps selectedISO={selectedISO} /> : <Navigate to="/login" />} 
-            />
-            <Route 
-              path="/analytics" 
-              element={user ? <Analytics /> : <Navigate to="/login" />} 
-            />
-            <Route 
-              path="/admin" 
-              element={user ? <Admin /> : <Navigate to="/login" />} 
-            />
+            <Route path="/login" element={<Navigate to="/maps" replace />} />
+            <Route path="/" element={<Navigate to="/maps" replace />} />
+            <Route path="/analysis" element={<Analysis />} />
+            <Route path="/maps" element={<Maps selectedISO={selectedISO} />} />
+            <Route path="/analytics" element={<Analytics />} />
+            <Route path="/admin" element={<Admin />} />
           </Routes>
         </main>
       </div>
