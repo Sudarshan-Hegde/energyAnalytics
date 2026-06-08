@@ -1016,8 +1016,10 @@ const Maps = ({ selectedISO }) => {
               state: props.state,
               zone: props.zone,
               shortCircuit: props.shortCircuit,
-              headroom_discharging: props.headroom_discharging,
-              headroom_charging: props.headroom_charging,
+              headroom_discharging: props.headroom_capacity_substation_discharging,
+              headroom_charging: props.headroom_capacity_substation_charging,
+              headroom_discharging_spring: props.headroom_capacity_substation_discharging_1,
+              headroom_charging_spring: props.headroom_capacity_substation_charging_1,
               lmp2022: props.lmp2022,
               lmp2023: props.lmp2023,
               lmp2024: props.lmp2024,
@@ -2998,21 +3000,47 @@ const Maps = ({ selectedISO }) => {
                       </div>
                       
                       {/* Headroom Capacity (Overhead Info) */}
-                      {(substation.headroom_discharging || substation.headroom_charging) && (
+                      {(substation.headroom_discharging || substation.headroom_charging || substation.headroom_discharging_spring || substation.headroom_charging_spring) && (
                         <div className="info-row header-row" style={{marginTop: '15px', borderTop: '1px solid #e5e7eb', paddingTop: '12px'}}>
                           <span className="info-label" style={{fontWeight: '600', color: '#374151'}}>Headroom Capacity (MW)</span>
                         </div>
                       )}
+                      
+                      {/* Summer Scenario */}
+                      {(substation.headroom_discharging || substation.headroom_charging) && (
+                        <div className="info-row" style={{marginTop: '8px'}}>
+                          <span className="info-label" style={{fontWeight: '600', color: '#f59e0b', fontSize: '13px'}}>Summer Peak:</span>
+                        </div>
+                      )}
                       {substation.headroom_discharging && (
-                        <div className="info-row">
-                          <span className="info-label">Discharging Capacity:</span>
+                        <div className="info-row" style={{paddingLeft: '12px'}}>
+                          <span className="info-label">Discharging:</span>
                           <span className="info-value" style={{color: '#10b981', fontWeight: '600'}}>{parseFloat(substation.headroom_discharging).toFixed(1)} MW</span>
                         </div>
                       )}
                       {substation.headroom_charging && (
-                        <div className="info-row">
-                          <span className="info-label">Charging Capacity:</span>
+                        <div className="info-row" style={{paddingLeft: '12px'}}>
+                          <span className="info-label">Charging:</span>
                           <span className="info-value" style={{color: '#3b82f6', fontWeight: '600'}}>{parseFloat(substation.headroom_charging).toFixed(1)} MW</span>
+                        </div>
+                      )}
+                      
+                      {/* Spring Scenario */}
+                      {(substation.headroom_discharging_spring || substation.headroom_charging_spring) && (
+                        <div className="info-row" style={{marginTop: '8px'}}>
+                          <span className="info-label" style={{fontWeight: '600', color: '#8b5cf6', fontSize: '13px'}}>Spring Light:</span>
+                        </div>
+                      )}
+                      {substation.headroom_discharging_spring && (
+                        <div className="info-row" style={{paddingLeft: '12px'}}>
+                          <span className="info-label">Discharging:</span>
+                          <span className="info-value" style={{color: '#10b981', fontWeight: '600'}}>{parseFloat(substation.headroom_discharging_spring).toFixed(1)} MW</span>
+                        </div>
+                      )}
+                      {substation.headroom_charging_spring && (
+                        <div className="info-row" style={{paddingLeft: '12px'}}>
+                          <span className="info-label">Charging:</span>
+                          <span className="info-value" style={{color: '#3b82f6', fontWeight: '600'}}>{parseFloat(substation.headroom_charging_spring).toFixed(1)} MW</span>
                         </div>
                       )}
                     </div>
