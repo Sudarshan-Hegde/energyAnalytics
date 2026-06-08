@@ -11,6 +11,8 @@ node_modules
 dist
 dist-ssr
 *.local
+gridsense_iso_ne.db
+backend/gridsense_iso_ne.db
 
 # Editor directories and files
 .vscode/*
