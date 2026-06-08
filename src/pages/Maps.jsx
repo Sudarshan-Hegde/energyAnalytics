@@ -201,7 +201,7 @@ const Maps = ({ selectedISO }) => {
     const fetchSubstationTypes = async () => {
       setSubstationTypesLoading(true);
       try {
-        const res = await fetch('http://localhost:8000/grid-data/substation-types');
+        const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/grid-data/substation-types`);
         const data = await res.json();
         if (data.success) {
           setSubstationTypes(data.data);
