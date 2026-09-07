@@ -1,13 +1,45 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+import hmac
 import sqlite3
 import os
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
+# --- Simple hardcoded access gate -------------------------------------------
+# Keeps the public Render deployment from being wide open. Credentials can be
+# overridden with env vars on Render without touching the code.
+AUTH_USERNAME = os.getenv('APP_USERNAME', 'power-minds')
+AUTH_PASSWORD = os.getenv('APP_PASSWORD', 'continuum-associates123')
+
+# Endpoints reachable without credentials (Render's health probe).
+PUBLIC_PATHS = {'/health'}
+
+
+def credentials_are_valid(auth):
+    if not auth:
+        return False
+    # hmac.compare_digest avoids leaking match position via timing
+    return (hmac.compare_digest(auth.username or '', AUTH_USERNAME)
+            and hmac.compare_digest(auth.password or '', AUTH_PASSWORD))
+
+
+@app.before_request
+def require_authentication():
+    # Let CORS preflight through - browsers never send credentials on OPTIONS
+    if request.method == 'OPTIONS' or request.path in PUBLIC_PATHS:
+        return None
+
+    if credentials_are_valid(request.authorization):
+        return None
+
+    # No WWW-Authenticate header on purpose: it would make the browser pop up
+    # its own native basic-auth dialog over the app's login screen.
+    return jsonify({'error': 'Unauthorized'}), 401
+
 # Database path
-DB_FILENAME = os.getenv('GRID_DB_FILENAME', 'gridsense_iso_ne_sample.db')
+DB_FILENAME = os.getenv('GRID_DB_FILENAME', 'gridops_iso_ne_sample.db')
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), DB_FILENAME)
 
 def get_db_connection():
@@ -23,7 +55,7 @@ def dict_from_row(row):
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
-    return jsonify({'status': 'healthy', 'message': 'GridSense API is running'})
+    return jsonify({'status': 'healthy', 'message': 'GridOps API is running'})
 
 @app.route('/grid-data/buses', methods=['GET'])
 def get_buses():
@@ -956,7 +988,7 @@ if __name__ == '__main__':
         print(f"Please ensure {DB_FILENAME} exists in the project root")
         exit(1)
     
-    print(f"Starting GridSense Backend API...")
+    print(f"Starting GridOps Backend API...")
     print(f"Database: {DB_PATH}")
     print(f"Server: http://localhost:8000")
     print(f"Health Check: http://localhost:8000/health")

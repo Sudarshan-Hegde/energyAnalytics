@@ -4,6 +4,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import './Maps.css';
 import useGridInfrastructure from '../hooks/useGridInfrastructure';
 import { gridDataAPI } from '../services/api';
+import { authFetch } from '../utils/auth';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -203,7 +204,7 @@ const Maps = ({ selectedISO }) => {
     const fetchSubstationTypes = async () => {
       setSubstationTypesLoading(true);
       try {
-        const res = await fetch(`${API_BASE_URL}/grid-data/substation-types`);
+        const res = await authFetch(`${API_BASE_URL}/grid-data/substation-types`);
         const data = await res.json();
         if (data.success) {
           setSubstationTypes(data.data);
@@ -222,7 +223,7 @@ const Maps = ({ selectedISO }) => {
   useEffect(() => {
     const fetchFilterOptions = async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/grid-data/filter-options`);
+        const res = await authFetch(`${API_BASE_URL}/grid-data/filter-options`);
         const data = await res.json();
         if (data.success) {
           setFilterOptions(data.data);
@@ -273,7 +274,7 @@ const Maps = ({ selectedISO }) => {
         const url = `${API_BASE_URL}/grid-data/bus-dashboard?${params}`;
         console.log('🔄 Fetching dashboard data from:', url);
         
-        const res = await fetch(url);
+        const res = await authFetch(url);
         const data = await res.json();
         
         console.log('📥 Dashboard response:', data);
@@ -358,14 +359,14 @@ const Maps = ({ selectedISO }) => {
       setFutureOutlookLoading(true);
       try {
         // Fetch substation upgrades
-        const substationRes = await fetch(`${API_BASE_URL}/grid-data/future-outlook/substation-upgrades`);
+        const substationRes = await authFetch(`${API_BASE_URL}/grid-data/future-outlook/substation-upgrades`);
         const substationData = await substationRes.json();
         if (substationData.success) {
           setFutureSubstationUpgrades(substationData.data);
         }
         
         // Fetch transmission upgrades
-        const transmissionRes = await fetch(`${API_BASE_URL}/grid-data/future-outlook/transmission-upgrades`);
+        const transmissionRes = await authFetch(`${API_BASE_URL}/grid-data/future-outlook/transmission-upgrades`);
         const transmissionData = await transmissionRes.json();
         if (transmissionData.success) {
           setFutureTransmissionUpgrades(transmissionData.data);
@@ -389,7 +390,7 @@ const Maps = ({ selectedISO }) => {
   useEffect(() => {
     const fetchScenarios = async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/grid-data/scenarios`);
+        const res = await authFetch(`${API_BASE_URL}/grid-data/scenarios`);
         const data = await res.json();
         if (data.success) {
           setScenarios(data.data);
@@ -423,7 +424,7 @@ const Maps = ({ selectedISO }) => {
           params.append('search', busSearch);
         }
         
-        const res = await fetch(`${API_BASE_URL}/grid-data/constraints?${params}`);
+        const res = await authFetch(`${API_BASE_URL}/grid-data/constraints?${params}`);
         const data = await res.json();
         if (data.success) {
           setConstraints(data.data);
@@ -4051,7 +4052,7 @@ const Maps = ({ selectedISO }) => {
                                 const url = `${API_BASE_URL}/grid-data/bus-dashboard?${params}`;
                                 console.log('URL:', url);
                                 try {
-                                  const res = await fetch(url);
+                                  const res = await authFetch(url);
                                   const data = await res.json();
                                   console.log('Test response:', data);
                                   alert(`Fetched ${data.data?.length || 0} buses. Check console for details.`);

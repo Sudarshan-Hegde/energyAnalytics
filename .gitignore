@@ -9,10 +9,12 @@ lerna-debug.log*
 
 node_modules
 dist
+__pycache__/
+*.pyc
 dist-ssr
 *.local
-gridsense_iso_ne.db
-backend/gridsense_iso_ne.db
+gridops_iso_ne.db
+backend/gridops_iso_ne.db
 
 # Editor directories and files
 .vscode/*

@@ -4,7 +4,7 @@
 import sqlite3
 import json
 
-DB_PATH = 'gridsense_iso_ne.db'
+DB_PATH = 'gridops_iso_ne.db'
 
 def test_econ_query():
     conn = sqlite3.connect(DB_PATH)

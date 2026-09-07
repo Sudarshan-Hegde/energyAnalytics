@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { checkCredentials, setAuthenticated } from '../utils/auth';
 import './Login.css';
 
 const Login = ({ onLogin }) => {
@@ -9,7 +9,6 @@ const Login = ({ onLogin }) => {
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const navigate = useNavigate();
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -20,28 +19,18 @@ const Login = ({ onLogin }) => {
     setError('');
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
 
-    // Simulate API call
-    setTimeout(() => {
-      // Demo credentials - in production, this would be an API call
-      if (credentials.username === 'admin' && credentials.password === 'admin123') {
-        const user = {
-          username: credentials.username,
-          role: 'admin',
-          name: 'Administrator'
-        };
-        localStorage.setItem('user', JSON.stringify(user));
-        onLogin(user);
-        navigate('/maps');
-      } else {
-        setError('Invalid username or password');
-        setIsLoading(false);
-      }
-    }, 1000);
+    if (checkCredentials(credentials.username.trim(), credentials.password)) {
+      setAuthenticated();
+      onLogin();
+    } else {
+      setError('Invalid username or password');
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -58,7 +47,7 @@ const Login = ({ onLogin }) => {
               <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2">
                 <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
               </svg>
-              <h1>GRIDSENSE</h1>
+              <h1>GRIDOPS</h1>
             </div>
             <p className="login-subtitle">Power Grid Analytics Platform</p>
           </div>
@@ -116,14 +105,6 @@ const Login = ({ onLogin }) => {
               </div>
             </div>
 
-            <div className="form-options">
-              <label className="checkbox-label">
-                <input type="checkbox" />
-                <span>Remember me</span>
-              </label>
-              <a href="#" className="forgot-password">Forgot password?</a>
-            </div>
-
             <button type="submit" className="login-btn" disabled={isLoading}>
               {isLoading ? (
                 <>
@@ -142,10 +123,6 @@ const Login = ({ onLogin }) => {
               )}
             </button>
           </form>
-
-          <div className="login-footer">
-            <p>Demo credentials: <strong>admin / admin123</strong></p>
-          </div>
         </div>
 
         <div className="info-section">

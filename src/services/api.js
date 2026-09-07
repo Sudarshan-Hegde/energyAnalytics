@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getAuthHeader, clearAuthentication } from '../utils/auth';
 
 // Base API configuration
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -10,13 +11,10 @@ const api = axios.create({
   },
 });
 
-// Request interceptor for adding auth token
+// Request interceptor - every call carries the shared basic-auth credentials
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+    config.headers.Authorization = getAuthHeader();
     return config;
   },
   (error) => {
@@ -29,8 +27,9 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      window.location.href = '/';
+      // Backend rejected the credentials - drop back to the login screen
+      clearAuthentication();
+      window.location.reload();
     }
     return Promise.reject(error);
   }

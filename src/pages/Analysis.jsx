@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import useGridInfrastructure from '../hooks/useGridInfrastructure';
+import { authFetch } from '../utils/auth';
 import './Analysis.css';
 
 const Analysis = () => {
@@ -43,7 +44,7 @@ const Analysis = () => {
     const fetchCoverageMetrics = async () => {
       setMetricsLoading(true);
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/grid-data/coverage-metrics?threshold=${voltageThreshold}`);
+        const res = await authFetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/grid-data/coverage-metrics?threshold=${voltageThreshold}`);
         const data = await res.json();
         if (data.success) {
           setCoverageMetrics(data.data);

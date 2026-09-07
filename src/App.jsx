@@ -5,10 +5,13 @@ import Maps from './pages/Maps';
 import Analytics from './pages/Analytics';
 import Admin from './pages/Admin';
 import Analysis from './pages/Analysis';
+import Login from './pages/Login';
+import { isAuthenticated, clearAuthentication } from './utils/auth';
 import './App.css';
 
 function App() {
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [selectedISO, setSelectedISO] = useState('iso_ne');
 
   useEffect(() => {
@@ -16,8 +19,14 @@ function App() {
     if (savedISO) {
       setSelectedISO(savedISO);
     }
+    setIsLoggedIn(isAuthenticated());
     setIsLoading(false);
   }, []);
+
+  const handleLogout = () => {
+    clearAuthentication();
+    setIsLoggedIn(false);
+  };
   
   const handleISOChange = (isoId) => {
     setSelectedISO(isoId);
@@ -45,10 +54,18 @@ function App() {
     );
   }
 
+  if (!isLoggedIn) {
+    return <Login onLogin={() => setIsLoggedIn(true)} />;
+  }
+
   return (
     <Router>
       <div className="app">
-        <Navbar selectedISO={selectedISO} onISOChange={handleISOChange} />
+        <Navbar
+          selectedISO={selectedISO}
+          onISOChange={handleISOChange}
+          onLogout={handleLogout}
+        />
         <main className="main-content">
           <Routes>
             <Route path="/login" element={<Navigate to="/maps" replace />} />
